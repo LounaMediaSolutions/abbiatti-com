@@ -11,7 +11,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { toast } from "sonner";
 import { Building2, ArrowLeft } from "lucide-react";
-import { consumePostLoginRedirect, peekPostLoginRedirect, resolvePostLoginRedirect } from "@/lib/authRedirect";
+import {
+  consumePostLoginRedirect,
+  peekPostLoginRedirect,
+  resolvePostLoginRedirect,
+} from "@/lib/authRedirect";
+import { getAppOrigin } from "@/lib/appOrigin";
 
 const loginSchema = z.object({
   email: z.string().trim().email(),
@@ -33,16 +38,26 @@ const Auth = () => {
   const [searchParams] = useSearchParams();
   const defaultTab = searchParams.get("tab") === "signup" ? "signup" : "login";
   const queryRedirect = searchParams.get("redirect");
-  const stateFrom = typeof location.state === "object" && location.state && "from" in location.state && typeof (location.state as any).from === "string"
-    ? (location.state as any).from as string
-    : null;
+  const stateFrom =
+    typeof location.state === "object" &&
+    location.state &&
+    "from" in location.state &&
+    typeof (location.state as any).from === "string"
+      ? ((location.state as any).from as string)
+      : null;
   const storedFrom = peekPostLoginRedirect();
-  const redirectTo = resolvePostLoginRedirect(queryRedirect, stateFrom, storedFrom);
+  const redirectTo = resolvePostLoginRedirect(
+    queryRedirect,
+    stateFrom,
+    storedFrom,
+  );
   const [loading, setLoading] = useState(false);
+  const appOrigin = getAppOrigin();
 
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
-  const lastOrgName = typeof window !== "undefined" ? localStorage.getItem("lastOrgName") : null;
+  const lastOrgName =
+    typeof window !== "undefined" ? localStorage.getItem("lastOrgName") : null;
 
   const [orgName, setOrgName] = useState("");
   const [fullName, setFullName] = useState("");
@@ -54,7 +69,10 @@ const Auth = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      const parsed = loginSchema.safeParse({ email: loginEmail, password: loginPassword });
+      const parsed = loginSchema.safeParse({
+        email: loginEmail,
+        password: loginPassword,
+      });
       if (!parsed.success) {
         toast.error(parsed.error.issues[0].message);
         return;
@@ -69,9 +87,14 @@ const Auth = () => {
       }
       toast.success(t("auth.loginSuccess"));
       // Redirect guests to /guest
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (user) {
-        const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", user.id);
+        const { data: roles } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", user.id);
         if ((roles ?? []).some((r) => r.role === "guest")) {
           consumePostLoginRedirect();
           navigate("/guest");
@@ -90,7 +113,11 @@ const Auth = () => {
     setLoading(true);
     try {
       const parsed = signupSchema.safeParse({
-        orgName, fullName, email: signupEmail, phone, password: signupPassword,
+        orgName,
+        fullName,
+        email: signupEmail,
+        phone,
+        password: signupPassword,
       });
       if (!parsed.success) {
         toast.error(parsed.error.issues[0].message);
@@ -100,7 +127,7 @@ const Auth = () => {
         email: parsed.data.email,
         password: parsed.data.password,
         options: {
-          emailRedirectTo: `${window.location.origin}/`,
+          emailRedirectTo: `${appOrigin}/`,
           data: {
             full_name: parsed.data.fullName,
             phone: parsed.data.phone ?? "",
@@ -113,7 +140,9 @@ const Auth = () => {
         toast.error(error.message);
         return;
       }
-      try { localStorage.setItem("lastOrgName", parsed.data.orgName); } catch {}
+      try {
+        localStorage.setItem("lastOrgName", parsed.data.orgName);
+      } catch {}
       toast.success(t("auth.signupSuccess"));
     } finally {
       setLoading(false);
@@ -129,13 +158,15 @@ const Auth = () => {
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(parsed.data, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: `${appOrigin}/reset-password`,
       });
       if (error) {
         toast.error(error.message);
         return;
       }
-      toast.success(t("auth.resetEmailSent") || "Email de réinitialisation envoyé");
+      toast.success(
+        t("auth.resetEmailSent") || "Email de réinitialisation envoyé",
+      );
     } finally {
       setLoading(false);
     }
@@ -160,7 +191,8 @@ const Auth = () => {
           <h1 className="text-2xl font-bold text-secondary">Espace Agence</h1>
           {lastOrgName ? (
             <p className="text-base font-medium text-primary mt-1">
-              {t("auth.welcomeAgency", { name: lastOrgName }) || `Bienvenue ${lastOrgName} 👋`}
+              {t("auth.welcomeAgency", { name: lastOrgName }) ||
+                `Bienvenue ${lastOrgName} 👋`}
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">Admin & Co-hôte</p>
@@ -177,11 +209,23 @@ const Auth = () => {
             <form onSubmit={handleLogin} className="space-y-4 mt-4">
               <div className="space-y-2">
                 <Label htmlFor="loginEmail">{t("auth.email")}</Label>
-                <Input id="loginEmail" type="email" required value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} />
+                <Input
+                  id="loginEmail"
+                  type="email"
+                  required
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="loginPassword">{t("auth.password")}</Label>
-                <Input id="loginPassword" type="password" required value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+                <Input
+                  id="loginPassword"
+                  type="password"
+                  required
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                />
               </div>
               <Button type="submit" className="w-full" disabled={loading}>
                 {t("auth.loginBtn")}
@@ -201,24 +245,54 @@ const Auth = () => {
             <form onSubmit={handleSignup} className="space-y-4 mt-4">
               <div className="space-y-2">
                 <Label htmlFor="orgName">{t("auth.orgName")}</Label>
-                <Input id="orgName" required value={orgName} onChange={(e) => setOrgName(e.target.value)} />
+                <Input
+                  id="orgName"
+                  required
+                  value={orgName}
+                  onChange={(e) => setOrgName(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="fullName">{t("auth.fullName")}</Label>
-                <Input id="fullName" required value={fullName} onChange={(e) => setFullName(e.target.value)} />
+                <Input
+                  id="fullName"
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="signupEmail">{t("auth.email")}</Label>
-                <Input id="signupEmail" type="email" required value={signupEmail} onChange={(e) => setSignupEmail(e.target.value)} />
+                <Input
+                  id="signupEmail"
+                  type="email"
+                  required
+                  value={signupEmail}
+                  onChange={(e) => setSignupEmail(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="phone">{t("auth.phone")}</Label>
-                <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                <Input
+                  id="phone"
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="signupPassword">{t("auth.password")}</Label>
-                <Input id="signupPassword" type="password" required minLength={6} value={signupPassword} onChange={(e) => setSignupPassword(e.target.value)} />
-                <p className="text-xs text-muted-foreground">{t("auth.passwordMin")}</p>
+                <Input
+                  id="signupPassword"
+                  type="password"
+                  required
+                  minLength={6}
+                  value={signupPassword}
+                  onChange={(e) => setSignupPassword(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t("auth.passwordMin")}
+                </p>
               </div>
               <Button type="submit" className="w-full" disabled={loading}>
                 {t("auth.signupBtn")}
