@@ -37,7 +37,7 @@ export async function getUserAccess(userId: string) {
     .eq("id", userId)
     .maybeSingle();
 
-  const isAdmin = profile?.role === "admin" || profile?.role === "super_admin";
+  const isAdmin = profile?.role === "admin" || profile?.role === "super_admin" || profile?.role === "co_admin";
 
   const { data: cohosts } = await supabase
     .from("property_cohosts")
@@ -45,12 +45,14 @@ export async function getUserAccess(userId: string) {
     .eq("user_id", userId)
     .limit(1);
 
-  const isCohost = (cohosts && cohosts.length > 0);
+  const isCohost = (cohosts && cohosts.length > 0) && !isAdmin;
   const isManager = isAdmin || isCohost;
 
   return {
     organizationId: null, // Legacy, removed
     isManager,
+    isAdmin,
+    isCohost,
     isStaff: !isManager,
   };
 }

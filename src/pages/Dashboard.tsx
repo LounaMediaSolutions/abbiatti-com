@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { WhatsAppReminders } from "@/components/WhatsAppReminders";
+import { getUserAccess } from "@/lib/access";
 
 const Dashboard = () => {
   const { t } = useTranslation();
@@ -18,14 +19,42 @@ const Dashboard = () => {
   useEffect(() => {
     const load = async () => {
       if (!user) return;
-      const [{ data: profile }, { count: propsCount }, { count: teamCount }] = await Promise.all([
-        supabase.from("profiles").select("full_name, organization_id").eq("id", user.id).maybeSingle(),
-        supabase.from("properties").select("*", { count: "exact", head: true }),
-        supabase.from("user_roles").select("*", { count: "exact", head: true }),
-      ]);
+      const { isAdmin, isCohost } = await getUserAccess(user.id);
+      
+      const { data: profile } = await supabase.from("profiles").select("full_name, org_id").eq("id", user.id).maybeSingle();
+      
+      let propsCount = 0;
+      let teamCount = 0;
+      let tasksCount = 0;
+
+      if (isAdmin) {
+        const [props, team, tasks] = await Promise.all([
+          supabase.from("properties").select("*", { count: "exact", head: true }).eq("org_id", profile?.org_id),
+          supabase.from("profiles").select("*", { count: "exact", head: true }).eq("org_id", profile?.org_id),
+          supabase.from("tasks").select("*", { count: "exact", head: true }).eq("org_id", profile?.org_id)
+        ]);
+        propsCount = props.count ?? 0;
+        teamCount = team.count ?? 0;
+        tasksCount = tasks.count ?? 0;
+      } else if (isCohost) {
+        const { data: cohosts } = await supabase.from("property_cohosts").select("property_id").eq("user_id", user.id);
+        const propIds = (cohosts ?? []).map(c => c.property_id);
+        propsCount = propIds.length;
+        
+        if (propsCount > 0) {
+          const { count: tasks } = await supabase.from("tasks").select("*", { count: "exact", head: true }).in("property_id", propIds);
+          tasksCount = tasks ?? 0;
+          
+          // Count distinct users in property_cohosts for these properties
+          const { data: cohostUsers } = await supabase.from("property_cohosts").select("user_id").in("property_id", propIds);
+          const uniqueUsers = new Set((cohostUsers ?? []).map(c => c.user_id));
+          teamCount = uniqueUsers.size;
+        }
+      }
+
       setName(profile?.full_name ?? "");
-      setOrgId((profile as any)?.organization_id ?? null);
-      setStats({ properties: propsCount ?? 0, team: teamCount ?? 0, tasks: 0 });
+      setOrgId(profile?.org_id ?? null);
+      setStats({ properties: propsCount, team: teamCount, tasks: tasksCount });
     };
     load();
   }, [user]);

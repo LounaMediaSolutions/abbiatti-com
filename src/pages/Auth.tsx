@@ -91,11 +91,12 @@ const Auth = () => {
         data: { user },
       } = await supabase.auth.getUser();
       if (user) {
-        const { data: roles } = await supabase
-          .from("user_roles")
+        const { data: profile } = await supabase
+          .from("profiles")
           .select("role")
-          .eq("user_id", user.id);
-        if ((roles ?? []).some((r) => r.role === "guest")) {
+          .eq("id", user.id)
+          .maybeSingle();
+        if (profile?.role === "guest") {
           consumePostLoginRedirect();
           navigate("/guest");
           return;

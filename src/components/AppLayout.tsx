@@ -15,6 +15,8 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
   const { signOut, user, loading } = useAuth();
   const navigate = useNavigate();
   const [isStaff, setIsStaff] = useState<boolean | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [isCohost, setIsCohost] = useState<boolean | null>(null);
   const [orgLogo, setOrgLogo] = useState<string | null>(null);
 
   useEffect(() => {
@@ -25,33 +27,32 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
     }
 
     setIsStaff(null);
-    getUserAccess(user.id).then(({ isStaff }) => {
+    getUserAccess(user.id).then(({ isStaff, isAdmin, isCohost }) => {
       setIsStaff(isStaff);
+      setIsAdmin(isAdmin);
+      setIsCohost(isCohost);
     });
 
     // Load org branding (logo + brand color) and detect guest role
     (async () => {
       const { supabase } = await import("@/integrations/supabase/client");
 
-      const { data: roles } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", user.id);
-      if ((roles ?? []).some((r) => r.role === "guest")) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role, org_id")
+        .eq("id", user.id)
+        .maybeSingle();
+      
+      if (profile?.role === "guest") {
         navigate("/guest", { replace: true });
         return;
       }
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("organization_id")
-        .eq("id", user.id)
-        .maybeSingle();
-      if (!profile?.organization_id) return;
+      if (!profile?.org_id) return;
       const { data: org } = await supabase
         .from("organizations")
         .select("logo_url, brand_color")
-        .eq("id", profile.organization_id)
+        .eq("id", profile.org_id)
         .maybeSingle();
       setOrgLogo(org?.logo_url ?? null);
       if (org?.brand_color) {
@@ -81,6 +82,18 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
     { to: "/settings", icon: Settings, label: t("nav.settings") },
   ];
 
+  const cohostNav = [
+    { to: "/", icon: LayoutDashboard, label: t("nav.dashboard"), end: true },
+    { to: "/properties", icon: Home, label: t("nav.properties") },
+    { to: "/availability", icon: CalendarRange, label: t("nav.availability") },
+    { to: "/reservations", icon: CalendarDays, label: t("nav.reservations") },
+    { to: "/tasks", icon: ListTodo, label: t("nav.tasks") },
+    { to: "/team", icon: Users, label: t("nav.team") },
+    { to: "/rentals", icon: Sparkles, label: t("nav.rentals") },
+    { to: "/guest-books", icon: BookOpen, label: "Livrets" },
+    { to: "/tickets", icon: AlertTriangle, label: "Signalements" },
+  ];
+
   const staffNav = [
     { to: "/", icon: CalendarDays, label: t("agenda.title"), end: true },
     { to: "/tickets", icon: AlertTriangle, label: "Signalements" },
@@ -88,7 +101,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
     { to: "/settings", icon: Settings, label: t("nav.settings") },
   ];
 
-  const navItems = isStaff ? staffNav : managerNav;
+  const navItems = isStaff ? staffNav : (isCohost ? cohostNav : managerNav);
 
   const handleLogout = async () => {
     await signOut();
