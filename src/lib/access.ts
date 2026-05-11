@@ -1,5 +1,36 @@
 import { supabase } from "@/integrations/supabase/client";
 
+export type AppRole =
+  | "super_admin"
+  | "admin"
+  | "co_admin"
+  | "cohost"
+  | "cleaner"
+  | "driver"
+  | "decorator"
+  | "maintenance"
+  | "staff"
+  | "guest"
+  | string;
+
+export const ADMIN_ROLES = ["super_admin", "admin", "co_admin"] as const;
+export const EMPLOYEE_ROLES = ["cleaner", "driver", "decorator", "maintenance", "staff"] as const;
+
+export const isAdminRole = (role: string | null | undefined) =>
+  !!role && ADMIN_ROLES.includes(role as (typeof ADMIN_ROLES)[number]);
+
+export const isEmployeeRole = (role: string | null | undefined) =>
+  !!role && EMPLOYEE_ROLES.includes(role as (typeof EMPLOYEE_ROLES)[number]);
+
+export const getDashboardPathForRole = (
+  role: string | null | undefined,
+  hasCohostAssignments = false,
+) => {
+  if (isAdminRole(role)) return "/admin/dashboard";
+  if (role === "cohost" || hasCohostAssignments) return "/cohost/dashboard";
+  return "/employee";
+};
+
 export async function isGlobalAdmin(userId: string) {
   const { data: profile } = await supabase
     .from("profiles")
@@ -7,7 +38,7 @@ export async function isGlobalAdmin(userId: string) {
     .eq("id", userId)
     .maybeSingle();
 
-  return profile?.role === "admin" || profile?.role === "super_admin";
+  return isAdminRole(profile?.role);
 }
 
 export async function getPropertyPermissions(userId: string, propertyId: string) {
@@ -33,11 +64,12 @@ export async function hasPropertyPermission(userId: string, propertyId: string, 
 export async function getUserAccess(userId: string) {
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, org_id")
     .eq("id", userId)
     .maybeSingle();
 
-  const isAdmin = profile?.role === "admin" || profile?.role === "super_admin" || profile?.role === "co_admin";
+  const role = (profile?.role ?? null) as AppRole | null;
+  const isAdmin = isAdminRole(role);
 
   const { data: cohosts } = await supabase
     .from("property_cohosts")
@@ -45,11 +77,15 @@ export async function getUserAccess(userId: string) {
     .eq("user_id", userId)
     .limit(1);
 
-  const isCohost = (cohosts && cohosts.length > 0) && !isAdmin;
+  const hasCohostAssignments = !!(cohosts && cohosts.length > 0);
+  const isCohost = !isAdmin && (role === "cohost" || hasCohostAssignments);
   const isManager = isAdmin || isCohost;
+  const dashboardPath = getDashboardPathForRole(role, hasCohostAssignments);
 
   return {
-    organizationId: null, // Legacy, removed
+    orgId: profile?.org_id ?? null,
+    role,
+    dashboardPath,
     isManager,
     isAdmin,
     isCohost,

@@ -15,7 +15,6 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
   const { signOut, user, loading } = useAuth();
   const navigate = useNavigate();
   const [isStaff, setIsStaff] = useState<boolean | null>(null);
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [isCohost, setIsCohost] = useState<boolean | null>(null);
   const [orgLogo, setOrgLogo] = useState<string | null>(null);
 
@@ -27,9 +26,8 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
     }
 
     setIsStaff(null);
-    getUserAccess(user.id).then(({ isStaff, isAdmin, isCohost }) => {
+    getUserAccess(user.id).then(({ isStaff, isCohost }) => {
       setIsStaff(isStaff);
-      setIsAdmin(isAdmin);
       setIsCohost(isCohost);
     });
 
@@ -65,7 +63,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
 
 
   const managerNav = [
-    { to: "/", icon: LayoutDashboard, label: t("nav.dashboard"), end: true },
+    { to: "/admin/dashboard", icon: LayoutDashboard, label: t("nav.dashboard"), end: true },
     { to: "/properties", icon: Home, label: t("nav.properties") },
     { to: "/availability", icon: CalendarRange, label: t("nav.availability") },
     { to: "/reservations", icon: CalendarDays, label: t("nav.reservations") },
@@ -83,7 +81,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
   ];
 
   const cohostNav = [
-    { to: "/", icon: LayoutDashboard, label: t("nav.dashboard"), end: true },
+    { to: "/cohost/dashboard", icon: LayoutDashboard, label: t("nav.dashboard"), end: true },
     { to: "/properties", icon: Home, label: t("nav.properties") },
     { to: "/availability", icon: CalendarRange, label: t("nav.availability") },
     { to: "/reservations", icon: CalendarDays, label: t("nav.reservations") },
@@ -95,7 +93,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
   ];
 
   const staffNav = [
-    { to: "/", icon: CalendarDays, label: t("agenda.title"), end: true },
+    { to: "/employee", icon: CalendarDays, label: t("agenda.title"), end: true },
     { to: "/tickets", icon: AlertTriangle, label: "Signalements" },
     { to: "/help", icon: HelpCircle, label: t("nav.help") },
     { to: "/settings", icon: Settings, label: t("nav.settings") },
@@ -105,7 +103,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
 
   const handleLogout = async () => {
     await signOut();
-    navigate("/auth");
+    navigate("/welcome");
   };
 
   if (loading || (user && isStaff === null)) {

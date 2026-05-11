@@ -23,6 +23,7 @@ import { PropertyApprovalTimeline } from "@/components/PropertyApprovalTimeline"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
+import { getUserAccess } from "@/lib/access";
 
 interface Property {
   id: string;
@@ -132,6 +133,8 @@ const Properties = () => {
   const [importing, setImporting] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [canApprove, setCanApprove] = useState(false);
+  const [canManageAll, setCanManageAll] = useState(false);
+  const [orgId, setOrgId] = useState<string | null>(null);
   const [rejectFor, setRejectFor] = useState<Property | null>(null);
   const [historyFor, setHistoryFor] = useState<Property | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -144,35 +147,39 @@ const Properties = () => {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
     setUserId(user?.id ?? null);
-    if (user) {
-      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-      if (profile?.role === "admin" || profile?.role === "super_admin" || profile?.role === "co_admin") {
-        setCanApprove(true);
-      } else {
-        setCanApprove(false);
-      }
+    if (!user) {
+      setItems([]);
+      setCanApprove(false);
+      setCanManageAll(false);
+      setOrgId(null);
+      setLoading(false);
+      return;
     }
+
+    const access = await getUserAccess(user.id);
+    setCanApprove(access.isAdmin);
+    setCanManageAll(access.isAdmin);
+    setOrgId(access.orgId);
+
     const { data, error } = await supabase.from("properties").select("*").order("created_at", { ascending: false });
     if (error) toast.error(error.message);
     const props = (data ?? []) as Property[];
     
-    // Filter properties based on user role (if not admin, only show properties they cohost)
+    // Cohosts only work inside their assigned portfolio.
     let visibleProps = props;
-    if (user && !canApprove) {
+    if (!access.isAdmin) {
       const { data: cohosted } = await supabase.from("property_cohosts").select("property_id").eq("user_id", user.id);
       const allowedIds = new Set((cohosted ?? []).map((c: any) => c.property_id));
       visibleProps = props.filter(p => allowedIds.has(p.id));
     }
     setItems(visibleProps);
 
-    // Fetch cohosts
-    const { data: cohostData } = await supabase.from("property_cohosts").select("user_id").in("property_id", visibleProps.map(p => p.id));
-    const cohostUserIds = Array.from(new Set((cohostData ?? []).map((r: any) => r.user_id)));
-    if (cohostUserIds.length) {
+    if (access.isAdmin && access.orgId) {
       const { data: cohostProfiles } = await supabase
         .from("profiles")
         .select("id, full_name")
-        .in("id", cohostUserIds);
+        .eq("org_id", access.orgId)
+        .eq("role", "cohost");
       setCohosts((cohostProfiles ?? []) as any);
     } else {
       setCohosts([]);
@@ -328,16 +335,13 @@ const Properties = () => {
       if (error) return toast.error(error.message);
       toast.success(t("properties.updated"));
     } else {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data: orgs } = await supabase.from("organizations").select("id").eq("owner_id", user.id).limit(1);
-      if (!orgs || orgs.length === 0) return toast.error("No organization found for your user");
+      if (!orgId || !userId) return toast.error("No organization found for your user");
 
       const { error } = await supabase.from("properties").insert([{
         ...payload,
         name: parsed.data.name,
-        org_id: orgs[0].id,
-        submitted_by: user.id,
+        org_id: orgId,
+        submitted_by: userId,
       }]);
       if (error) return toast.error(error.message);
       toast.success(t("properties.created"));
@@ -415,8 +419,8 @@ const Properties = () => {
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl md:text-3xl font-bold text-secondary">{t("properties.title")}</h1>
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={openNew}>
+          <DialogTrigger asChild disabled={!canManageAll}>
+            <Button onClick={openNew} disabled={!canManageAll}>
               <Plus className="h-4 w-4 mr-2" />
               {t("properties.add")}
             </Button>
@@ -601,10 +605,12 @@ const Properties = () => {
           <Home className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
           <h3 className="font-semibold text-secondary">{t("properties.empty")}</h3>
           <p className="text-sm text-muted-foreground mb-4">{t("properties.emptyHint")}</p>
-          <Button onClick={openNew}>
-            <Plus className="h-4 w-4 mr-2" />
-            {t("properties.add")}
-          </Button>
+          {canManageAll && (
+            <Button onClick={openNew}>
+              <Plus className="h-4 w-4 mr-2" />
+              {t("properties.add")}
+            </Button>
+          )}
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -731,7 +737,7 @@ const Properties = () => {
                   size="sm"
                   className="flex-1"
                   onClick={() => openEdit(p)}
-                  disabled={p.approval_status === "pending" && !canApprove}
+                  disabled={!canManageAll || (p.approval_status === "pending" && !canApprove)}
                   title={p.approval_status === "pending" && !canApprove ? t("properties.approval.lockedHint") : undefined}
                 >
                   <Pencil className="h-3.5 w-3.5 mr-1" /> {t("properties.edit")}
@@ -745,9 +751,11 @@ const Properties = () => {
                 {(p as any).qr_token && (
                   <PropertyQRCode propertyName={p.name} qrToken={(p as any).qr_token} />
                 )}
-                <Button variant="outline" size="sm" onClick={() => setDeleteId(p.id)}>
-                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                </Button>
+                {canManageAll && (
+                  <Button variant="outline" size="sm" onClick={() => setDeleteId(p.id)}>
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                  </Button>
+                )}
               </div>
             </Card>
           ))}

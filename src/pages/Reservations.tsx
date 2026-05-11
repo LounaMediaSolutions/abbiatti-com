@@ -17,6 +17,7 @@ import { useNavigate } from "react-router-dom";
 import { ReservationRentals } from "@/components/ReservationRentals";
 import { CreateGuestAccountDialog } from "@/components/CreateGuestAccountDialog";
 import { format } from "date-fns";
+import { getUserAccess } from "@/lib/access";
 
 type Reservation = {
   id: string;
@@ -69,32 +70,57 @@ export default function Reservations() {
   const [addOpen, setAddOpen] = useState(false);
   const [guestAcctFor, setGuestAcctFor] = useState<Reservation | null>(null);
 
+  const { data: access } = useQuery({
+    queryKey: ["userAccess", user?.id],
+    queryFn: async () => getUserAccess(user!.id),
+    enabled: !!user,
+  });
+
   const { data: orgId } = useQuery({
     queryKey: ["myOrg", user?.id],
     queryFn: async () => {
-      const { data } = await supabase.from("profiles").select("organization_id").eq("id", user!.id).single();
-      return data?.organization_id as string;
+      const { data } = await supabase.from("profiles").select("org_id").eq("id", user!.id).single();
+      return data?.org_id as string;
     },
     enabled: !!user,
   });
 
-  const { data: properties = [] } = useQuery({
-    queryKey: ["properties"],
+  const { data: properties = [], isLoading: isLoadingProperties } = useQuery({
+    queryKey: ["properties", access?.role, user?.id],
     queryFn: async () => {
       const { data } = await supabase.from("properties").select("id, name").order("name");
-      return (data ?? []) as Property[];
+      const allProperties = (data ?? []) as Property[];
+
+      if (!user || !access?.isCohost) return allProperties;
+
+      const { data: assignments } = await supabase
+        .from("property_cohosts")
+        .select("property_id")
+        .eq("user_id", user.id);
+      const allowedIds = new Set((assignments ?? []).map((row) => row.property_id));
+
+      return allProperties.filter((property) => allowedIds.has(property.id));
     },
+    enabled: !!access,
   });
 
+  const propertyIdsKey = properties.map((property) => property.id).sort().join(",");
+
   const { data: reservations = [], isLoading } = useQuery({
-    queryKey: ["reservations"],
+    queryKey: ["reservations", access?.role, user?.id, propertyIdsKey],
     queryFn: async () => {
       const { data } = await supabase
         .from("reservations")
         .select("*")
         .order("check_in", { ascending: true });
-      return (data ?? []) as Reservation[];
+      const allReservations = (data ?? []) as Reservation[];
+
+      if (!access?.isCohost) return allReservations;
+
+      const allowedIds = new Set(properties.map((property) => property.id));
+      return allReservations.filter((reservation) => allowedIds.has(reservation.property_id));
     },
+    enabled: !!access && (!access.isCohost || !isLoadingProperties),
   });
 
   const { data: feeds = [] } = useQuery({

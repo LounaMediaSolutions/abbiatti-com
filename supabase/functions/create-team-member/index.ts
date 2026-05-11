@@ -27,32 +27,34 @@ Deno.serve(async (req) => {
     const { email, password, full_name, phone, role, property_ids } = await req.json();
     if (!email || !password || !role) return json({ error: "Missing fields" }, 400);
 
-    // Caller's profile -> org
+    // Caller profile -> org + role
     const { data: callerProfile } = await userClient
-      .from("profiles").select("organization_id").eq("id", user.id).maybeSingle();
-    const orgId = callerProfile?.organization_id;
+      .from("profiles")
+      .select("org_id, role")
+      .eq("id", user.id)
+      .maybeSingle();
+    const orgId = callerProfile?.org_id;
     if (!orgId) return json({ error: "No organization" }, 400);
-
-    // Caller roles
-    const { data: callerRoles } = await userClient
-      .from("user_roles").select("role").eq("user_id", user.id).eq("organization_id", orgId);
-    const roles = (callerRoles ?? []).map((r) => r.role);
-    const isAdmin = roles.includes("admin");
-    const isCohost = roles.includes("cohost");
-    if (!isAdmin && !isCohost) return json({ error: "Forbidden" }, 403);
+    const callerRole = callerProfile?.role;
+    const isSuperAdmin = callerRole === "super_admin";
+    const isAdmin = callerRole === "admin";
+    const isCoAdmin = callerRole === "co_admin";
+    const isCohost = callerRole === "cohost";
+    if (!isSuperAdmin && !isAdmin && !isCoAdmin && !isCohost) return json({ error: "Forbidden" }, 403);
 
     // Authorization rules
-    if (role === "admin" && !isAdmin) return json({ error: "Only admin can create admin" }, 403);
-    if (role === "cohost" && !isAdmin) return json({ error: "Only admin can create cohost" }, 403);
-    if (role === "co_admin" && !isAdmin) return json({ error: "Only admin can create co-admin" }, 403);
+    if (role === "super_admin" && !isSuperAdmin) return json({ error: "Only super admin can create super admin" }, 403);
+    if (role === "admin" && !isSuperAdmin) return json({ error: "Only super admin can create admin" }, 403);
+    if (role === "co_admin" && !isAdmin && !isSuperAdmin) return json({ error: "Only admin can create co-admin" }, 403);
+    if (role === "cohost" && !isAdmin && !isSuperAdmin && !isCoAdmin) return json({ error: "Only admin can create cohost" }, 403);
 
-    // For cohost callers creating staff, ensure all property_ids are properties they cohost
-    if (!isAdmin && property_ids?.length) {
+    // For cohost callers creating staff, ensure all property_ids are within their assignments.
+    if (isCohost && property_ids?.length) {
       const { data: cohostProps } = await userClient
-        .from("property_members")
+        .from("property_cohosts")
         .select("property_id")
         .eq("user_id", user.id)
-        .eq("role", "cohost");
+        .not("property_id", "is", null);
       const allowed = new Set((cohostProps ?? []).map((p) => p.property_id));
       for (const pid of property_ids) {
         if (!allowed.has(pid)) return json({ error: "Not your property" }, 403);
@@ -71,31 +73,27 @@ Deno.serve(async (req) => {
     }
     const newUserId = created.user.id;
 
-    // Override profile org (handle_new_user trigger creates a separate org by default)
+    // Override profile org/role (signup trigger may create a personal org by default)
     await admin.from("profiles").update({
-      organization_id: orgId,
+      org_id: orgId,
+      role,
+      email,
       full_name: full_name ?? "",
       phone: phone ?? "",
     }).eq("id", newUserId);
 
-    // Remove auto-created admin role (in fresh org) and set proper role in caller's org
-    await admin.from("user_roles").delete().eq("user_id", newUserId);
-    await admin.from("user_roles").insert({
-      user_id: newUserId,
-      organization_id: orgId,
-      role,
-    });
-
-    // Property assignments (skip for co_admin: org-wide access, no per-property entry)
-    if (property_ids?.length && role !== "co_admin") {
+    // Property assignments are only tracked for cohosts in the current schema.
+    if (role === "cohost") {
+      await admin.from("property_cohosts").delete().eq("user_id", newUserId);
+    }
+    if (property_ids?.length && role === "cohost") {
       const rows = property_ids.map((pid: string) => ({
         property_id: pid,
         user_id: newUserId,
-        organization_id: orgId,
-        role,
         assigned_by: user.id,
+        permissions: ["manage_properties", "manage_reservations", "manage_tasks", "manage_staff"],
       }));
-      await admin.from("property_members").insert(rows);
+      await admin.from("property_cohosts").insert(rows);
     }
 
     return json({ user_id: newUserId });

@@ -76,6 +76,30 @@ const App = () => (
               }
             />
             <Route
+              path="/admin/dashboard"
+              element={
+                <ProtectedRoute>
+                  <AppLayout><Home /></AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/cohost/dashboard"
+              element={
+                <ProtectedRoute>
+                  <AppLayout><Home /></AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/employee"
+              element={
+                <ProtectedRoute>
+                  <AppLayout><Home /></AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/properties"
               element={
                 <ProtectedRoute>

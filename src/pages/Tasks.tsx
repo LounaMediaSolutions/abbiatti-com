@@ -22,6 +22,7 @@ import { PHOTO_ACCEPT, validatePhotoFile } from "@/lib/photoUpload";
 import { cn } from "@/lib/utils";
 import { TASK_TYPES, TASK_TYPE_ICONS, TASK_TYPE_COLORS, type TaskType } from "@/lib/taskIcons";
 import { CleaningChecklist } from "@/components/CleaningChecklist";
+import { getUserAccess } from "@/lib/access";
 
 type TaskStatus = "todo" | "in_progress" | "done" | "issue";
 type PhotoKind = "before" | "during" | "after" | "issue";
@@ -88,14 +89,49 @@ const Tasks = () => {
     if (!profile?.org_id) { setLoading(false); return; }
     setOrgId(profile.org_id);
 
-    const [rolesRes, propsRes, profsRes, tasksRes] = await Promise.all([
-      supabase.from("profiles").select("role").eq("id", user.id), // Fetch user's role
+    const access = await getUserAccess(user.id);
+    const baseRoles = access.role ? [access.role] : [];
+    const isScopedCohost = access.isCohost && !access.isAdmin;
+
+    const { data: allTasks } = await supabase
+      .from("tasks")
+      .select("*")
+      .eq("org_id", profile.org_id)
+      .order("created_at", { ascending: false });
+
+    if (isScopedCohost) {
+      const { data: assignments } = await supabase
+        .from("property_cohosts")
+        .select("property_id")
+        .eq("user_id", user.id);
+      const allowedIds = (assignments ?? []).map((assignment) => assignment.property_id);
+
+      const [propsRes, profsRes] = await Promise.all([
+        allowedIds.length
+          ? supabase.from("properties").select("id,name").in("id", allowedIds).order("name")
+          : Promise.resolve({ data: [] }),
+        supabase
+          .from("profiles")
+          .select("id,full_name")
+          .eq("org_id", profile.org_id)
+          .in("role", ["cleaner", "driver", "decorator", "maintenance", "staff"]),
+      ]);
+
+      setMyRoles(baseRoles);
+      setProperties((propsRes.data ?? []) as Property[]);
+      setMembers((profsRes.data ?? []) as Member[]);
+      setTasks(((allTasks ?? []) as Task[]).filter((task) => task.property_id && allowedIds.includes(task.property_id)));
+      setLoading(false);
+      return;
+    }
+
+    const [propsRes, profsRes] = await Promise.all([
       supabase.from("properties").select("id,name").eq("org_id", profile.org_id).order("name"),
       supabase.from("profiles").select("id,full_name").eq("org_id", profile.org_id),
-      supabase.from("tasks").select("*").eq("org_id", profile.org_id).order("created_at", { ascending: false }),
     ]);
-    setMyRoles((rolesRes.data ?? []).map((r: any) => r.role));
-    setTasks((tasksRes.data ?? []) as Task[]);
+
+    setMyRoles(baseRoles);
+    setTasks((allTasks ?? []) as Task[]);
     setProperties((propsRes.data ?? []) as Property[]);
     setMembers((profsRes.data ?? []) as Member[]);
     setLoading(false);

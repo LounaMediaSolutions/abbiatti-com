@@ -11,6 +11,7 @@ import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { toast } from "sonner";
 import { ArrowLeft, LogIn } from "lucide-react";
 import { buildRedirectQueryPath, consumePostLoginRedirect, peekPostLoginRedirect, resolvePostLoginRedirect } from "@/lib/authRedirect";
+import { getUserAccess } from "@/lib/access";
 
 const loginSchema = z.object({
   email: z.string().trim().email(),
@@ -50,8 +51,12 @@ const StaffLogin = () => {
       return;
     }
     toast.success(t("auth.loginSuccess"));
-    const target = consumePostLoginRedirect() ?? redirectTo;
-    navigate(target === "/welcome" ? "/" : target, { replace: true });
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    const access = user ? await getUserAccess(user.id) : null;
+    const target = consumePostLoginRedirect() ?? (redirectTo === "/welcome" ? access?.dashboardPath ?? "/employee" : redirectTo);
+    navigate(target, { replace: true });
   };
 
   return (

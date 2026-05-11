@@ -22,10 +22,10 @@ import { Unauthorized } from "@/components/Unauthorized";
 import { isAuthzError } from "@/lib/authzError";
 import { CohostKpisInline } from "@/components/CohostKpisInline";
 
-type Role = "admin" | "co_admin" | "cohost" | "cleaner" | "driver" | "decorator" | "maintenance";
+type Role = "super_admin" | "admin" | "co_admin" | "cohost" | "cleaner" | "driver" | "decorator" | "maintenance" | "staff";
 
 const ROLE_EMOJI: Record<string, string> = {
-  admin: "👑", co_admin: "🛡️", cohost: "🏠", cleaner: "🧹", driver: "🚗", decorator: "🎨", maintenance: "🔧", staff: "👤",
+  super_admin: "⭐", admin: "👑", co_admin: "🛡️", cohost: "🏠", cleaner: "🧹", driver: "🚗", decorator: "🎨", maintenance: "🔧", staff: "👤",
 };
 
 interface Property { id: string; name: string; }
@@ -52,6 +52,7 @@ export default function Team() {
   const [submitting, setSubmitting] = useState(false);
   const [createdCreds, setCreatedCreds] = useState<{ email: string; password: string } | null>(null);
   const [denied, setDenied] = useState(false);
+  const [roleUpdatingUserId, setRoleUpdatingUserId] = useState<string | null>(null);
   const [expandedCohost, setExpandedCohost] = useState<string | null>(null);
   const [expandedProperty, setExpandedProperty] = useState<string | null>(null);
 
@@ -63,16 +64,27 @@ export default function Team() {
   const [fPwd, setFPwd] = useState(generatePwd());
 
   const isAdmin = myRoles.includes("admin");
+  const isSuperAdmin = myRoles.includes("super_admin");
   const isCoAdmin = myRoles.includes("co_admin");
   const isCohost = myRoles.includes("cohost");
-  const isAdminLike = isAdmin || isCoAdmin;
+  const isAdminLike = isSuperAdmin || isAdmin || isCoAdmin;
   const myCohostPropIds = propMembers.filter(m => m.user_id === user?.id && m.role === "cohost").map(m => m.property_id);
 
-  const availableRoles: Role[] = isAdmin
+  const availableRoles: Role[] = isSuperAdmin
+    ? ["admin", "co_admin", "cohost", "cleaner", "driver", "decorator", "maintenance"]
+    : isAdmin
     ? ["co_admin", "cohost", "cleaner", "driver", "decorator", "maintenance"]
     : isCoAdmin
     ? ["cohost", "cleaner", "driver", "decorator", "maintenance"]
     : ["cleaner", "driver", "decorator", "maintenance"];
+
+  const editableRoles: Role[] = isSuperAdmin
+    ? ["super_admin", "admin", "co_admin", "cohost", "cleaner", "driver", "decorator", "maintenance", "staff"]
+    : isAdmin
+    ? ["co_admin", "cohost", "cleaner", "driver", "decorator", "maintenance", "staff"]
+    : isCoAdmin
+    ? ["cohost", "cleaner", "driver", "decorator", "maintenance", "staff"]
+    : [];
 
   const visibleProps = isAdminLike ? properties : properties.filter(p => myCohostPropIds.includes(p.id));
 
@@ -183,6 +195,34 @@ export default function Team() {
     if (error) { toast.error(error.message); return; }
     toast.success(t("team.removed"));
     loadAll();
+  }
+
+  async function updateMemberRole(userId: string, nextRole: Role) {
+    setRoleUpdatingUserId(userId);
+    try {
+      const { error } = await supabase.from("profiles").update({ role: nextRole }).eq("id", userId);
+      if (error) throw error;
+
+      if (nextRole !== "cohost") {
+        const { error: cleanupError } = await supabase
+          .from("property_cohosts")
+          .delete()
+          .eq("user_id", userId);
+        if (cleanupError) throw cleanupError;
+      }
+
+      setOrgRoles((current) => {
+        const next = current.filter((entry) => entry.user_id !== userId);
+        next.push({ user_id: userId, role: nextRole });
+        return next;
+      });
+      toast.success(t("common.save"));
+      await loadAll();
+    } catch (error: any) {
+      toast.error(error.message ?? t("common.error"));
+    } finally {
+      setRoleUpdatingUserId(null);
+    }
   }
 
   if (denied) {
@@ -324,20 +364,90 @@ export default function Team() {
       </div>
 
       {isAdminLike ? (
-        <AdminGroupedView
-          orgId={orgId}
-          properties={properties}
-          profiles={profiles}
-          orgRoles={orgRoles}
-          propMembers={propMembers}
-          expandedCohost={expandedCohost}
-          setExpandedCohost={setExpandedCohost}
-          expandedProperty={expandedProperty}
-          setExpandedProperty={setExpandedProperty}
-          onRemoveAssignment={removeAssignment}
-          setProfiles={setProfiles}
-          t={t}
-        />
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("team.members")}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {Object.entries(members).map(([uid, roles]) => {
+                const profile = profiles[uid];
+                const currentRole = roles[0] ?? "staff";
+                const assignments = propMembers.filter((member) => member.user_id === uid);
+
+                return (
+                  <div key={uid} className="border rounded-lg p-3 space-y-3">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-3">
+                        <AvatarUpload
+                          userId={uid}
+                          currentUrl={profile?.avatar_url}
+                          fallbackEmoji={ROLE_EMOJI[currentRole] ?? "👤"}
+                          size="md"
+                          onUploaded={(url) => setProfiles(p => ({ ...p, [uid]: { ...(p[uid] ?? { id: uid, full_name: null, phone: null, avatar_url: null }), avatar_url: url } }))}
+                        />
+                        <div>
+                          <div className="font-medium">{profile?.full_name || "—"}</div>
+                          <div className="text-xs text-muted-foreground">{profile?.phone || "—"}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant={currentRole === "admin" || currentRole === "super_admin" ? "default" : currentRole === "cohost" ? "secondary" : "outline"}>
+                          {t(`team.roles.${currentRole}`)}
+                        </Badge>
+                        {editableRoles.length > 0 && uid !== user?.id && (
+                          <Select
+                            value={currentRole}
+                            onValueChange={(value) => updateMemberRole(uid, value as Role)}
+                            disabled={roleUpdatingUserId === uid}
+                          >
+                            <SelectTrigger className="w-[180px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {editableRoles.map((role) => (
+                                <SelectItem key={role} value={role}>
+                                  {t(`team.roles.${role}`)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                    </div>
+                    {assignments.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {assignments.map((assignment) => {
+                          const property = properties.find((item) => item.id === assignment.property_id);
+                          return (
+                            <Badge key={assignment.id} variant="outline">
+                              {property?.name ?? "?"} · {t(`team.roles.${assignment.role}`)}
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+
+          <AdminGroupedView
+            orgId={orgId}
+            properties={properties}
+            profiles={profiles}
+            orgRoles={orgRoles}
+            propMembers={propMembers}
+            expandedCohost={expandedCohost}
+            setExpandedCohost={setExpandedCohost}
+            expandedProperty={expandedProperty}
+            setExpandedProperty={setExpandedProperty}
+            onRemoveAssignment={removeAssignment}
+            setProfiles={setProfiles}
+            t={t}
+          />
+        </div>
       ) : (
         <Card>
           <CardHeader><CardTitle>{t("team.members")}</CardTitle></CardHeader>

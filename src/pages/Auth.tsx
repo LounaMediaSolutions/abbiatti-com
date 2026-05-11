@@ -17,6 +17,7 @@ import {
   resolvePostLoginRedirect,
 } from "@/lib/authRedirect";
 import { getAppOrigin } from "@/lib/appOrigin";
+import { getUserAccess } from "@/lib/access";
 
 const loginSchema = z.object({
   email: z.string().trim().email(),
@@ -86,24 +87,26 @@ const Auth = () => {
         return;
       }
       toast.success(t("auth.loginSuccess"));
-      // Redirect guests to /guest
+      // Route authenticated users to their dashboard unless a deeper redirect was stored.
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .maybeSingle();
-        if (profile?.role === "guest") {
+        const access = await getUserAccess(user.id);
+        if (access.role === "guest") {
           consumePostLoginRedirect();
           navigate("/guest");
           return;
         }
+
+        const storedTarget = consumePostLoginRedirect();
+        const fallbackTarget = redirectTo === "/welcome" ? access.dashboardPath : redirectTo;
+        navigate(storedTarget ?? fallbackTarget, { replace: true });
+        return;
       }
+
       const target = consumePostLoginRedirect() ?? redirectTo;
-      navigate(target === "/welcome" ? "/" : target, { replace: true });
+      navigate(target === "/welcome" ? "/employee" : target, { replace: true });
     } finally {
       setLoading(false);
     }
