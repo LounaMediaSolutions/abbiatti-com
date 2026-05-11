@@ -79,29 +79,71 @@ export default function Team() {
   async function loadAll() {
     if (!user) return;
     setLoading(true);
-    const { data: profile } = await supabase.from("profiles").select("organization_id").eq("id", user.id).maybeSingle();
-    const o = profile?.organization_id ?? null;
-    setOrgId(o);
-    if (!o) { setLoading(false); return; }
+    
+    const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+    const role = profile?.role as Role;
+    setMyRoles(role ? [role] : []);
+    
+    const isAdminLike = role === "admin" || role === "super_admin" || role === "co_admin";
 
-    const [rolesRes, propsRes, allRolesRes, pmRes] = await Promise.all([
-      supabase.from("user_roles").select("role").eq("user_id", user.id).eq("organization_id", o),
-      supabase.from("properties").select("id,name").eq("organization_id", o).order("name"),
-      supabase.from("user_roles").select("user_id,role").eq("organization_id", o),
-      supabase.from("property_members").select("id,user_id,property_id,role").eq("organization_id", o),
-    ]);
-    setMyRoles((rolesRes.data ?? []).map(r => r.role as Role));
-    setProperties(propsRes.data ?? []);
-    setOrgRoles((allRolesRes.data ?? []) as any);
-    setPropMembers((pmRes.data ?? []) as any);
-
-    const userIds = Array.from(new Set([...(allRolesRes.data ?? []).map(r => r.user_id)]));
-    if (userIds.length) {
-      const { data: profs } = await supabase.from("profiles").select("id,full_name,phone,avatar_url").in("id", userIds);
-      const map: Record<string, Profile> = {};
-      (profs ?? []).forEach(p => { map[p.id] = p as Profile; });
-      setProfiles(map);
+    // Get properties
+    let propsRes;
+    if (isAdminLike) {
+      propsRes = await supabase.from("properties").select("id,name").order("name");
+    } else {
+      const { data: cohosted } = await supabase.from("property_cohosts").select("property_id").eq("user_id", user.id);
+      const propIds = (cohosted ?? []).map(c => c.property_id);
+      if (propIds.length > 0) {
+        propsRes = await supabase.from("properties").select("id,name").in("id", propIds).order("name");
+      } else {
+        propsRes = { data: [] };
+      }
     }
+    const myProps = propsRes?.data ?? [];
+    setProperties(myProps);
+
+    if (myProps.length === 0 && !isAdminLike) {
+      setLoading(false);
+      return;
+    }
+
+    const propIds = myProps.map(p => p.id);
+    let pmRes: any = { data: [] };
+    if (propIds.length > 0) {
+      pmRes = await supabase.from("property_cohosts").select("property_id, user_id, permissions").in("property_id", propIds);
+    }
+    
+    const mappedMembers = (pmRes.data ?? []).map((m: any) => ({
+      id: `${m.property_id}_${m.user_id}`,
+      user_id: m.user_id,
+      property_id: m.property_id,
+      role: (m.permissions?.includes("manage_properties") ? "cohost" : "staff") as Role
+    }));
+    setPropMembers(mappedMembers);
+
+    const userIds = Array.from(new Set(mappedMembers.map((m: any) => m.user_id)));
+    if (isAdminLike) {
+      const { data: allProfs } = await supabase.from("profiles").select("id,full_name,phone,avatar_url,role");
+      const map: Record<string, Profile> = {};
+      const oRoles: { user_id: string; role: Role }[] = [];
+      (allProfs ?? []).forEach((p: any) => { 
+        map[p.id] = p as Profile; 
+        oRoles.push({ user_id: p.id, role: (p.role || "staff") as Role });
+      });
+      setProfiles(map);
+      setOrgRoles(oRoles);
+    } else if (userIds.length > 0) {
+      const { data: profs } = await supabase.from("profiles").select("id,full_name,phone,avatar_url,role").in("id", userIds);
+      const map: Record<string, Profile> = {};
+      const oRoles: { user_id: string; role: Role }[] = [];
+      (profs ?? []).forEach((p: any) => { 
+        map[p.id] = p as Profile;
+        oRoles.push({ user_id: p.id, role: (p.role || "staff") as Role });
+      });
+      setProfiles(map);
+      setOrgRoles(oRoles);
+    }
+
     setLoading(false);
   }
 
@@ -136,7 +178,8 @@ export default function Team() {
 
   async function removeAssignment(id: string) {
     if (!confirm(t("team.removeConfirm"))) return;
-    const { error } = await supabase.from("property_members").delete().eq("id", id);
+    const [propId, userId] = id.split("_");
+    const { error } = await supabase.from("property_cohosts").delete().eq("property_id", propId).eq("user_id", userId);
     if (error) { toast.error(error.message); return; }
     toast.success(t("team.removed"));
     loadAll();
@@ -311,10 +354,9 @@ export default function Team() {
                 <div key={uid} className="border rounded-lg p-3 space-y-2">
                   <div className="flex items-center justify-between flex-wrap gap-3">
                     <div className="flex items-center gap-3">
-                      {orgId && (
+                      {true && (
                         <AvatarUpload
                           userId={uid}
-                          organizationId={orgId}
                           currentUrl={profile?.avatar_url}
                           fallbackEmoji={emoji}
                           size="md"
@@ -416,10 +458,9 @@ function AdminGroupedView({
                   className="w-full flex items-center justify-between p-3 hover:bg-accent/50 transition"
                 >
                   <div className="flex items-center gap-3">
-                    {orgId && (
+                    {true && (
                       <AvatarUpload
                         userId={uid}
-                        organizationId={orgId}
                         currentUrl={profile?.avatar_url}
                         fallbackEmoji="🏠"
                         size="md"

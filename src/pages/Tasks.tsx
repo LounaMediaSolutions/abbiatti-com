@@ -28,7 +28,7 @@ type PhotoKind = "before" | "during" | "after" | "issue";
 
 interface Task {
   id: string;
-  organization_id: string;
+  org_id: string;
   property_id: string | null;
   assigned_to: string | null;
   created_by: string;
@@ -79,26 +79,25 @@ const Tasks = () => {
     priority: 2, due_at: "", guest_name: "",
   });
 
-  const isManager = myRoles.includes("admin") || myRoles.includes("cohost");
+  const isManager = myRoles.some(r => ["admin", "super_admin", "co_admin", "cohost"].includes(r));
 
   const loadAll = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const { data: profile } = await supabase.from("profiles").select("organization_id").eq("id", user.id).maybeSingle();
-    if (!profile?.organization_id) { setLoading(false); return; }
-    setOrgId(profile.organization_id);
+    const { data: profile } = await supabase.from("profiles").select("org_id").eq("id", user.id).maybeSingle();
+    if (!profile?.org_id) { setLoading(false); return; }
+    setOrgId(profile.org_id);
 
-    const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", user.id);
-    setMyRoles((roles ?? []).map((r: any) => r.role));
-
-    const [{ data: ts }, { data: ps }, { data: ms }] = await Promise.all([
-      supabase.from("tasks").select("*").order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false }),
-      supabase.from("properties").select("id,name").order("name"),
-      supabase.from("profiles").select("id,full_name").eq("organization_id", profile.organization_id),
+    const [rolesRes, propsRes, profsRes, tasksRes] = await Promise.all([
+      supabase.from("profiles").select("role").eq("id", user.id), // Fetch user's role
+      supabase.from("properties").select("id,name").eq("org_id", profile.org_id).order("name"),
+      supabase.from("profiles").select("id,full_name").eq("org_id", profile.org_id),
+      supabase.from("tasks").select("*").eq("org_id", profile.org_id).order("created_at", { ascending: false }),
     ]);
-    setTasks((ts ?? []) as Task[]);
-    setProperties((ps ?? []) as Property[]);
-    setMembers((ms ?? []) as Member[]);
+    setMyRoles((rolesRes.data ?? []).map((r: any) => r.role));
+    setTasks((tasksRes.data ?? []) as Task[]);
+    setProperties((propsRes.data ?? []) as Property[]);
+    setMembers((profsRes.data ?? []) as Member[]);
     setLoading(false);
   }, [user]);
 
@@ -115,7 +114,7 @@ const Tasks = () => {
     if (!orgId || !user) return;
     if (!form.title.trim()) return toast.error(t("tasks.taskTitle"));
     const { error } = await supabase.from("tasks").insert([{
-      organization_id: orgId,
+      org_id: orgId,
       created_by: user.id,
       title: form.title.trim(),
       type: form.type,
@@ -427,12 +426,12 @@ const TaskDetail = ({
     try {
       const ext = file.name.split(".").pop() || "jpg";
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-      const path = `${task.organization_id}/${task.id}/${fileName}`;
+      const path = `${task.org_id}/${task.id}/${fileName}`;
       const { error: upErr } = await supabase.storage.from("task-photos").upload(path, file, { contentType: file.type });
       if (upErr) throw upErr;
       const { error: insErr } = await supabase.from("task_photos").insert([{
         task_id: task.id,
-        organization_id: task.organization_id,
+        org_id: task.org_id,
         uploaded_by: user.id,
         storage_path: path,
         kind,
@@ -478,7 +477,7 @@ const TaskDetail = ({
       {isCleaning && (
         <CleaningChecklist
           taskId={task.id}
-          organizationId={task.organization_id}
+          organizationId={task.org_id}
           canEdit={task.assigned_to === user?.id || task.created_by === user?.id}
           onAllDone={setChecklistComplete}
         />

@@ -7,7 +7,6 @@ import { PHOTO_ACCEPT, validatePhotoFile } from "@/lib/photoUpload";
 
 interface Props {
   userId: string;
-  organizationId: string;
   currentUrl?: string | null;
   fallbackEmoji?: string;
   size?: "sm" | "md" | "lg";
@@ -16,7 +15,7 @@ interface Props {
 
 const sizeMap = { sm: "h-12 w-12 text-xl", md: "h-16 w-16 text-2xl", lg: "h-24 w-24 text-4xl" };
 
-export function AvatarUpload({ userId, organizationId, currentUrl, fallbackEmoji = "👤", size = "md", onUploaded }: Props) {
+export function AvatarUpload({ userId, currentUrl, fallbackEmoji = "👤", size = "md", onUploaded }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [url, setUrl] = useState<string | null>(currentUrl ?? null);
@@ -33,7 +32,7 @@ export function AvatarUpload({ userId, organizationId, currentUrl, fallbackEmoji
     setUploading(true);
     try {
       const ext = file.name.split(".").pop() || "jpg";
-      const path = `${organizationId}/${userId}.${ext}`;
+      const path = `users/${userId}.${ext}`;
       const { error: upErr } = await supabase.storage
         .from("avatars")
         .upload(path, file, { upsert: true, contentType: file.type });

@@ -26,7 +26,7 @@ import { format } from "date-fns";
 
 interface Property {
   id: string;
-  organization_id: string;
+  org_id: string;
   name: string;
   property_type: string;
   address: string | null;
@@ -145,48 +145,45 @@ const Properties = () => {
     const { data: { user } } = await supabase.auth.getUser();
     setUserId(user?.id ?? null);
     if (user) {
-      const { data: profile } = await supabase.from("profiles").select("organization_id").eq("id", user.id).maybeSingle();
-      if (profile?.organization_id) {
-        const { data: roles } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", user.id)
-          .eq("organization_id", profile.organization_id);
-        setCanApprove((roles ?? []).some((r) => r.role === "admin" || r.role === "co_admin"));
+      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+      if (profile?.role === "admin" || profile?.role === "super_admin" || profile?.role === "co_admin") {
+        setCanApprove(true);
+      } else {
+        setCanApprove(false);
       }
     }
     const { data, error } = await supabase.from("properties").select("*").order("created_at", { ascending: false });
     if (error) toast.error(error.message);
     const props = (data ?? []) as Property[];
-    setItems(props);
-
-    // Fetch cohosts in org + current cohost assignments per property
-    const orgId = props[0]?.organization_id;
-    if (orgId) {
-      const { data: cohostRoles } = await supabase
-        .from("user_roles")
-        .select("user_id")
-        .eq("organization_id", orgId)
-        .eq("role", "cohost");
-      const cohostUserIds = Array.from(new Set((cohostRoles ?? []).map((r: any) => r.user_id)));
-      if (cohostUserIds.length) {
-        const { data: cohostProfiles } = await supabase
-          .from("profiles")
-          .select("id, full_name")
-          .in("id", cohostUserIds);
-        setCohosts((cohostProfiles ?? []) as any);
-      } else {
-        setCohosts([]);
-      }
+    
+    // Filter properties based on user role (if not admin, only show properties they cohost)
+    let visibleProps = props;
+    if (user && !canApprove) {
+      const { data: cohosted } = await supabase.from("property_cohosts").select("property_id").eq("user_id", user.id);
+      const allowedIds = new Set((cohosted ?? []).map((c: any) => c.property_id));
+      visibleProps = props.filter(p => allowedIds.has(p.id));
     }
-    if (props.length) {
+    setItems(visibleProps);
+
+    // Fetch cohosts
+    const { data: cohostData } = await supabase.from("property_cohosts").select("user_id").in("property_id", visibleProps.map(p => p.id));
+    const cohostUserIds = Array.from(new Set((cohostData ?? []).map((r: any) => r.user_id)));
+    if (cohostUserIds.length) {
+      const { data: cohostProfiles } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", cohostUserIds);
+      setCohosts((cohostProfiles ?? []) as any);
+    } else {
+      setCohosts([]);
+    }
+    if (visibleProps.length) {
       const { data: assignments } = await supabase
-        .from("property_members")
+        .from("property_cohosts")
         .select("property_id, user_id")
-        .in("property_id", props.map((p) => p.id))
-        .eq("role", "cohost");
+        .in("property_id", visibleProps.map((p) => p.id));
       const map: Record<string, string | null> = {};
-      props.forEach((p) => { map[p.id] = null; });
+      visibleProps.forEach((p) => { map[p.id] = null; });
       (assignments ?? []).forEach((a: any) => { map[a.property_id] = a.user_id; });
       setPropertyCohosts(map);
     }
@@ -333,13 +330,13 @@ const Properties = () => {
     } else {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data: profile } = await supabase.from("profiles").select("organization_id").eq("id", user.id).maybeSingle();
-      if (!profile?.organization_id) return toast.error("No organization");
+      const { data: orgs } = await supabase.from("organizations").select("id").eq("owner_id", user.id).limit(1);
+      if (!orgs || orgs.length === 0) return toast.error("No organization found for your user");
 
       const { error } = await supabase.from("properties").insert([{
         ...payload,
         name: parsed.data.name,
-        organization_id: profile.organization_id,
+        org_id: orgs[0].id,
         submitted_by: user.id,
       }]);
       if (error) return toast.error(error.message);
@@ -386,21 +383,19 @@ const Properties = () => {
     try {
       // Remove existing cohost assignments for this property
       const { error: delErr } = await supabase
-        .from("property_members")
+        .from("property_cohosts")
         .delete()
-        .eq("property_id", p.id)
-        .eq("role", "cohost");
+        .eq("property_id", p.id);
       if (delErr) throw delErr;
 
       if (newUserId) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error("Not authenticated");
-        const { error: insErr } = await supabase.from("property_members").insert([{
+        const { error: insErr } = await supabase.from("property_cohosts").insert([{
           property_id: p.id,
-          organization_id: p.organization_id,
           user_id: newUserId,
-          role: "cohost",
           assigned_by: user.id,
+          permissions: ["manage_properties", "manage_reservations", "manage_tasks", "manage_staff", "view_financials", "manage_settings"]
         }]);
         if (insErr) throw insErr;
       }
@@ -791,7 +786,7 @@ const Properties = () => {
       {icalProperty && (
         <IcalManager
           propertyId={icalProperty.id}
-          organizationId={icalProperty.organization_id}
+          organizationId={icalProperty.org_id}
           open={!!icalProperty}
           onOpenChange={(o) => !o && setIcalProperty(null)}
         />

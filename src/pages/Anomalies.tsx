@@ -46,13 +46,12 @@ export default function Anomalies() {
     if (!user) return;
     (async () => {
       setLoading(true);
-      const { data: profile } = await supabase.from("profiles").select("organization_id").eq("id", user.id).maybeSingle();
-      const orgId = profile?.organization_id;
+      const { data: profile } = await supabase.from("profiles").select("org_id, role").eq("id", user.id).maybeSingle();
+      const orgId = profile?.org_id;
       if (!orgId) { setLoading(false); return; }
 
-      const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", user.id).eq("organization_id", orgId);
-      const myRoles = (roles ?? []).map(r => r.role);
-      const isAdminLike = myRoles.includes("admin") || myRoles.includes("co_admin");
+      const myRole = profile?.role;
+      const isAdminLike = myRole === "admin" || myRole === "co_admin" || myRole === "super_admin";
       setAllowed(isAdminLike);
       if (!isAdminLike) { setLoading(false); return; }
 
@@ -60,12 +59,12 @@ export default function Anomalies() {
       const result: Anomaly[] = [];
 
       // Properties map
-      const { data: props } = await supabase.from("properties").select("id,name").eq("organization_id", orgId);
+      const { data: props } = await supabase.from("properties").select("id,name").eq("org_id", orgId);
       const propMap: Record<string, string> = {};
       (props ?? []).forEach(p => { propMap[p.id] = p.name; });
 
       // 1. Overdue tasks
-      const { data: tasks } = await supabase.from("tasks").select("id,title,due_at,status,property_id,assigned_to").eq("organization_id", orgId).in("status", ["todo", "in_progress"]).not("due_at", "is", null);
+      const { data: tasks } = await supabase.from("tasks").select("id,title,due_at,status,property_id,assigned_to").eq("org_id", orgId).in("status", ["todo", "in_progress"]).not("due_at", "is", null);
       (tasks ?? []).forEach(t => {
         const due = new Date(t.due_at!).getTime();
         if (due < now) {
@@ -83,10 +82,10 @@ export default function Anomalies() {
         }
       });
 
-      // 2. Unresolved tickets older than threshold
-      const { data: tickets } = await supabase.from("maintenance_tickets").select("id,title,created_at,resolved_at,property_id,priority").eq("organization_id", orgId).is("resolved_at", null);
+      // 2. Unresolved maintenance tasks older than threshold
+      const { data: tickets } = await supabase.from("tasks").select("id,title,created_at,completed_at,property_id,priority").eq("org_id", orgId).eq("type", "maintenance").is("completed_at", null);
       (tickets ?? []).forEach(t => {
-        const ageH = Math.round((now - new Date(t.created_at).getTime()) / 3600000);
+        const ageH = Math.round((now - new Date(t.created_at!).getTime()) / 3600000);
         if (ageH > TICKET_THRESHOLD_H || t.priority >= 4) {
           result.push({
             id: `ticket-${t.id}`,
@@ -94,60 +93,28 @@ export default function Anomalies() {
             type: "ticket_open",
             title: t.title,
             detail: `Ouvert depuis ${ageH < 24 ? `${ageH}h` : `${Math.round(ageH / 24)}j`}`,
-            link: "/tickets",
+            link: "/tasks",
             property: t.property_id ? propMap[t.property_id] : undefined,
             ageHours: ageH,
           });
         }
       });
 
-      // 3. Unanswered guest messages (last guest msg without host reply after threshold)
-      const { data: messages } = await supabase
-        .from("guest_messages")
-        .select("id,guest_account_id,sender_role,created_at,body,guest_accounts!inner(full_name,property_id)")
-        .eq("organization_id", orgId)
-        .order("created_at", { ascending: false })
-        .limit(500);
-      const byGuest: Record<string, any[]> = {};
-      (messages ?? []).forEach((m: any) => { (byGuest[m.guest_account_id] ||= []).push(m); });
-      Object.entries(byGuest).forEach(([gaId, list]) => {
-        // Sorted desc, find the latest guest msg with no host reply after it
-        const sorted = list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-        let lastGuestMsg: any = null;
-        for (const m of sorted) {
-          if (m.sender_role === "host") break;
-          if (m.sender_role === "guest") { lastGuestMsg = m; break; }
-        }
-        if (lastGuestMsg) {
-          const ageH = Math.round((now - new Date(lastGuestMsg.created_at).getTime()) / 3600000);
-          if (ageH >= MESSAGE_THRESHOLD_H) {
-            const ga = lastGuestMsg.guest_accounts;
-            result.push({
-              id: `msg-${gaId}`,
-              severity: ageH > 24 ? "high" : ageH > 12 ? "medium" : "low",
-              type: "message_unanswered",
-              title: `Message de ${ga?.full_name || "guest"} non répondu`,
-              detail: `${lastGuestMsg.body?.slice(0, 80) || ""}… (${ageH}h)`,
-              link: "/guests",
-              property: ga?.property_id ? propMap[ga.property_id] : undefined,
-              ageHours: ageH,
-            });
-          }
-        }
-      });
+      // 3. Unanswered guest messages (Removed as guest_messages table no longer exists)
+      // Implementation pending re-addition of messaging functionality.
 
       // 4. Reservations check-in within 48h with no cleaning task
       const in48h = new Date(now + 48 * 3600000).toISOString().split("T")[0];
       const today = new Date(now).toISOString().split("T")[0];
-      const { data: upcoming } = await supabase.from("reservations").select("id,guest_name,check_in,property_id,status").eq("organization_id", orgId).gte("check_in", today).lte("check_in", in48h).neq("status", "cancelled");
-      const { data: upcomingTasks } = await supabase.from("tasks").select("id,property_id,due_at,type").eq("organization_id", orgId).eq("type", "cleaning").gte("due_at", new Date(now - 86400000).toISOString());
+      const { data: upcoming } = await supabase.from("bookings").select("id,guest_name,checkin,property_id,status").eq("org_id", orgId).gte("checkin", today).lte("checkin", in48h).neq("status", "cancelled");
+      const { data: upcomingTasks } = await supabase.from("tasks").select("id,property_id,due_at,type").eq("org_id", orgId).eq("type", "cleaning").gte("due_at", new Date(now - 86400000).toISOString());
       (upcoming ?? []).forEach(r => {
         const hasCleaning = (upcomingTasks ?? []).some(t =>
           t.property_id === r.property_id &&
-          t.due_at && new Date(t.due_at).getTime() <= new Date(r.check_in).getTime() + 86400000
+          t.due_at && new Date(t.due_at).getTime() <= new Date(r.checkin!).getTime() + 86400000
         );
         if (!hasCleaning) {
-          const hoursUntil = Math.round((new Date(r.check_in).getTime() - now) / 3600000);
+          const hoursUntil = Math.round((new Date(r.checkin!).getTime() - now) / 3600000);
           result.push({
             id: `nocleaning-${r.id}`,
             severity: hoursUntil < 24 ? "high" : "medium",
@@ -162,23 +129,25 @@ export default function Anomalies() {
       });
 
       // 5. Reservation overlaps (same property, overlapping dates, not cancelled)
-      const { data: allRes } = await supabase.from("reservations").select("id,property_id,check_in,check_out,guest_name,status").eq("organization_id", orgId).neq("status", "cancelled").gte("check_out", today);
+      const { data: allRes } = await supabase.from("bookings").select("id,property_id,checkin,checkout,guest_name,status").eq("org_id", orgId).neq("status", "cancelled").gte("checkout", today);
       const byProp: Record<string, any[]> = {};
-      (allRes ?? []).forEach(r => { (byProp[r.property_id] ||= []).push(r); });
+      (allRes ?? []).forEach(r => { (byProp[r.property_id!] ||= []).push(r); });
       Object.values(byProp).forEach(list => {
         for (let i = 0; i < list.length; i++) {
           for (let j = i + 1; j < list.length; j++) {
             const a = list[i], b = list[j];
-            if (new Date(a.check_in) < new Date(b.check_out) && new Date(b.check_in) < new Date(a.check_out)) {
-              result.push({
-                id: `conflict-${a.id}-${b.id}`,
-                severity: "high",
-                type: "reservation_conflict",
-                title: `Conflit: ${a.guest_name || "?"} ↔ ${b.guest_name || "?"}`,
-                detail: `${a.check_in} → ${a.check_out} chevauche ${b.check_in} → ${b.check_out}`,
-                link: "/reservations",
-                property: propMap[a.property_id],
-              });
+            if (a.checkin && a.checkout && b.checkin && b.checkout) {
+              if (new Date(a.checkin) < new Date(b.checkout) && new Date(b.checkin) < new Date(a.checkout)) {
+                result.push({
+                  id: `conflict-${a.id}-${b.id}`,
+                  severity: "high",
+                  type: "reservation_conflict",
+                  title: `Conflit: ${a.guest_name || "?"} ↔ ${b.guest_name || "?"}`,
+                  detail: `${a.checkin} → ${a.checkout} chevauche ${b.checkin} → ${b.checkout}`,
+                  link: "/reservations",
+                  property: propMap[a.property_id!],
+                });
+              }
             }
           }
         }
