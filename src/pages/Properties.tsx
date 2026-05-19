@@ -1375,7 +1375,7 @@ const Properties = () => {
                 >
                   <Pencil className="h-3.5 w-3.5 mr-1" /> {t("properties.edit")}
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => setIcalProperty(p)} title={t("ical.title")}>
+                <Button variant="outline" size="sm" data-testid="property-ical-button" onClick={() => setIcalProperty(p)} title={t("ical.title")}>
                   <Calendar className="h-3.5 w-3.5" />
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => setHistoryFor(p)} title={t("properties.approval.history")}>

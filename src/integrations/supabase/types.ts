@@ -223,6 +223,295 @@ export type Database = {
           },
         ]
       }
+      cleaning_checklists: {
+        Row: {
+          created_at: string
+          done: boolean
+          id: string
+          label: string
+          organization_id: string
+          sort_order: number
+          task_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          done?: boolean
+          id?: string
+          label: string
+          organization_id: string
+          sort_order?: number
+          task_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          done?: boolean
+          id?: string
+          label?: string
+          organization_id?: string
+          sort_order?: number
+          task_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cleaning_checklists_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_checklists_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_checklists_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks_with_property"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      guest_accounts: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          email: string | null
+          full_name: string | null
+          id: string
+          language: string
+          marketing_consent: boolean
+          organization_id: string
+          phone: string | null
+          property_id: string | null
+          reservation_id: string | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          language?: string
+          marketing_consent?: boolean
+          organization_id: string
+          phone?: string | null
+          property_id?: string | null
+          reservation_id?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          language?: string
+          marketing_consent?: boolean
+          organization_id?: string
+          phone?: string | null
+          property_id?: string | null
+          reservation_id?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "guest_accounts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "guest_accounts_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      guest_books: {
+        Row: {
+          active: boolean
+          attractions: Json
+          check_in_instructions: string | null
+          check_out_instructions: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string
+          emergency_phone: string | null
+          extra_notes: string | null
+          house_rules: string | null
+          id: string
+          language: string
+          organization_id: string
+          property_id: string
+          restaurants: Json
+          slug: string
+          updated_at: string
+          wifi_name: string | null
+          wifi_password: string | null
+        }
+        Insert: {
+          active?: boolean
+          attractions?: Json
+          check_in_instructions?: string | null
+          check_out_instructions?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          emergency_phone?: string | null
+          extra_notes?: string | null
+          house_rules?: string | null
+          id?: string
+          language?: string
+          organization_id: string
+          property_id: string
+          restaurants?: Json
+          slug: string
+          updated_at?: string
+          wifi_name?: string | null
+          wifi_password?: string | null
+        }
+        Update: {
+          active?: boolean
+          attractions?: Json
+          check_in_instructions?: string | null
+          check_out_instructions?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          emergency_phone?: string | null
+          extra_notes?: string | null
+          house_rules?: string | null
+          id?: string
+          language?: string
+          organization_id?: string
+          property_id?: string
+          restaurants?: Json
+          slug?: string
+          updated_at?: string
+          wifi_name?: string | null
+          wifi_password?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "guest_books_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "guest_books_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      guest_messages: {
+        Row: {
+          body: string
+          created_at: string
+          guest_account_id: string
+          id: string
+          organization_id: string
+          read_at: string | null
+          sender_id: string | null
+          sender_role: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          guest_account_id: string
+          id?: string
+          organization_id: string
+          read_at?: string | null
+          sender_id?: string | null
+          sender_role: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          guest_account_id?: string
+          id?: string
+          organization_id?: string
+          read_at?: string | null
+          sender_id?: string | null
+          sender_role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "guest_messages_guest_account_id_fkey"
+            columns: ["guest_account_id"]
+            isOneToOne: false
+            referencedRelation: "guest_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "guest_messages_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      guest_uploads: {
+        Row: {
+          comment: string | null
+          created_at: string
+          guest_account_id: string
+          id: string
+          organization_id: string
+          storage_path: string
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          guest_account_id: string
+          id?: string
+          organization_id: string
+          storage_path: string
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          guest_account_id?: string
+          id?: string
+          organization_id?: string
+          storage_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "guest_uploads_guest_account_id_fkey"
+            columns: ["guest_account_id"]
+            isOneToOne: false
+            referencedRelation: "guest_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "guest_uploads_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoices: {
         Row: {
           amount: number | null
@@ -261,6 +550,95 @@ export type Database = {
           status?: string | null
         }
         Relationships: []
+      }
+      maintenance_tickets: {
+        Row: {
+          assigned_to: string | null
+          category: string | null
+          created_at: string
+          description: string | null
+          id: string
+          organization_id: string
+          photo_url: string | null
+          priority: string
+          property_id: string | null
+          reported_by: string | null
+          reporter_name: string | null
+          reporter_phone: string | null
+          resolved_at: string | null
+          status: string
+          task_id: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          category?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          organization_id: string
+          photo_url?: string | null
+          priority?: string
+          property_id?: string | null
+          reported_by?: string | null
+          reporter_name?: string | null
+          reporter_phone?: string | null
+          resolved_at?: string | null
+          status?: string
+          task_id?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_to?: string | null
+          category?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          organization_id?: string
+          photo_url?: string | null
+          priority?: string
+          property_id?: string | null
+          reported_by?: string | null
+          reporter_name?: string | null
+          reporter_phone?: string | null
+          resolved_at?: string | null
+          status?: string
+          task_id?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_tickets_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_tickets_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_tickets_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_tickets_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks_with_property"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       organizations: {
         Row: {
@@ -559,6 +937,66 @@ export type Database = {
           },
         ]
       }
+      property_ical_feeds: {
+        Row: {
+          active: boolean
+          created_at: string
+          ical_url: string
+          id: string
+          label: string
+          last_error: string | null
+          last_synced_at: string | null
+          last_synced_count: number | null
+          organization_id: string
+          property_id: string
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          ical_url: string
+          id?: string
+          label: string
+          last_error?: string | null
+          last_synced_at?: string | null
+          last_synced_count?: number | null
+          organization_id: string
+          property_id: string
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          ical_url?: string
+          id?: string
+          label?: string
+          last_error?: string | null
+          last_synced_at?: string | null
+          last_synced_count?: number | null
+          organization_id?: string
+          property_id?: string
+          source?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_ical_feeds_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_ical_feeds_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rental_items: {
         Row: {
           active: boolean | null
@@ -730,6 +1168,64 @@ export type Database = {
             columns: ["org_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_photos: {
+        Row: {
+          caption: string | null
+          created_at: string
+          id: string
+          kind: string
+          org_id: string
+          storage_path: string
+          task_id: string
+          uploaded_by: string | null
+          zone: string | null
+        }
+        Insert: {
+          caption?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          org_id: string
+          storage_path: string
+          task_id: string
+          uploaded_by?: string | null
+          zone?: string | null
+        }
+        Update: {
+          caption?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          org_id?: string
+          storage_path?: string
+          task_id?: string
+          uploaded_by?: string | null
+          zone?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_photos_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_photos_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_photos_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks_with_property"
             referencedColumns: ["id"]
           },
         ]
@@ -998,6 +1494,28 @@ export type Database = {
       }
     }
     Functions: {
+      get_public_guest_book: {
+        Args: { _slug: string }
+        Returns: {
+          active: boolean
+          attractions: Json
+          check_in_instructions: string
+          check_out_instructions: string
+          contact_name: string
+          contact_phone: string
+          emergency_phone: string
+          extra_notes: string
+          house_rules: string
+          id: string
+          language: string
+          organization_id: string
+          property_id: string
+          restaurants: Json
+          slug: string
+          wifi_name: string
+          wifi_password: string
+        }[]
+      }
       is_org_admin: { Args: never; Returns: boolean }
       is_org_staff: { Args: never; Returns: boolean }
       is_super_admin:

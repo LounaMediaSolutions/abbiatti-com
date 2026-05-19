@@ -16,7 +16,7 @@ import { IcalManager } from "@/components/IcalManager";
 
 type Property = {
   id: string;
-  organization_id: string;
+  org_id: string;
   name: string;
   city: string | null;
   country: string | null;
@@ -62,13 +62,16 @@ export default function Availability() {
       // org + cohost assignments, so we just ask for everything visible and
       // optionally narrow by `active=true` in JS once the rows arrive.
       //
-      // Note: `properties` is in types.ts as `org_id`, but the live schema
-      // uses `organization_id` on this column (see Properties.tsx which
-      // hand-rolls the column probe). We cast through `unknown` to bridge.
+      // The live `properties` table uses `org_id`, not `organization_id`,
+      // and the earlier comment here had it reversed — which is exactly
+      // why the page errored with "column properties.organization_id does
+      // not exist". Properties.tsx works around this by probing both names,
+      // but here we just commit to the live column name. RLS already
+      // scopes the rows to the user's org + cohost assignments.
       const { data, error } = await supabase
         .from("properties")
         .select(
-          "id, organization_id, name, city, country, property_type, max_guests, categories, active",
+          "id, org_id, name, city, country, property_type, max_guests, categories, active",
         )
         .order("name");
       if (error) {
@@ -354,7 +357,7 @@ export default function Availability() {
       {icalProperty && (
         <IcalManager
           propertyId={icalProperty.id}
-          organizationId={icalProperty.organization_id}
+          organizationId={icalProperty.org_id}
           open={!!icalProperty}
           onOpenChange={(o) => !o && setIcalProperty(null)}
         />

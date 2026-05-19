@@ -1,6 +1,18 @@
 // Scrape a public listing URL (Airbnb, Booking, Vrbo, etc.) using Firecrawl
 // and return structured property data for prefilling the new-property form.
-import { corsHeaders } from "https://esm.sh/@supabase/supabase-js@2.95.0/cors";
+//
+// Note: `@supabase/supabase-js` does NOT publish a "/cors" submodule, so we
+// define CORS headers locally. The previous import path
+// `https://esm.sh/@supabase/supabase-js@2.95.0/cors` was a hallucination —
+// it returns 404 at deploy time and the function fails to cold-start,
+// which surfaces in the client as "Failed to send a request to the Edge
+// Function".
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
 
 const FIRECRAWL_V2 = "https://api.firecrawl.dev/v2";
 

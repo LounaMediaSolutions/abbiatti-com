@@ -98,46 +98,46 @@ export const IcalManager = ({ propertyId, organizationId, open, onOpenChange }: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent data-testid="ical-manager-dialog" className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t("ical.title")}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="space-y-2">
+          <div className="space-y-2" data-testid="ical-feed-list">
             {loading ? (
               <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
             ) : feeds.length === 0 ? (
-              <p className="text-sm text-muted-foreground">{t("ical.empty")}</p>
+              <p className="text-sm text-muted-foreground" data-testid="ical-empty">{t("ical.empty")}</p>
             ) : (
               feeds.map((f) => (
-                <div key={f.id} className="rounded-lg border p-3 space-y-1">
+                <div key={f.id} data-testid="ical-feed-row" className="rounded-lg border p-3 space-y-1">
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="font-medium text-sm truncate">{f.label}</p>
+                      <p className="font-medium text-sm truncate" data-testid="ical-feed-label">{f.label}</p>
                       <p className="text-xs text-muted-foreground capitalize">{f.source}</p>
                     </div>
                     <div className="flex gap-1">
-                      <Button size="sm" variant="outline" onClick={() => sync(f.id)} disabled={syncing === f.id}>
+                      <Button size="sm" variant="outline" data-testid="ical-sync-button" onClick={() => sync(f.id)} disabled={syncing === f.id}>
                         <RefreshCw className={`h-3.5 w-3.5 ${syncing === f.id ? "animate-spin" : ""}`} />
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => remove(f.id)}>
+                      <Button size="sm" variant="outline" data-testid="ical-delete-button" onClick={() => remove(f.id)}>
                         <Trash2 className="h-3.5 w-3.5 text-destructive" />
                       </Button>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     {f.last_error ? (
-                      <Badge variant="destructive" className="gap-1">
+                      <Badge variant="destructive" className="gap-1" data-testid="ical-last-error">
                         <AlertCircle className="h-3 w-3" /> {f.last_error.slice(0, 40)}
                       </Badge>
                     ) : f.last_synced_at ? (
-                      <Badge variant="secondary" className="gap-1">
+                      <Badge variant="secondary" className="gap-1" data-testid="ical-last-synced">
                         <CheckCircle2 className="h-3 w-3" />
                         {new Date(f.last_synced_at).toLocaleString()}
                       </Badge>
                     ) : (
-                      <Badge variant="outline">{t("ical.neverSynced")}</Badge>
+                      <Badge variant="outline" data-testid="ical-never-synced">{t("ical.neverSynced")}</Badge>
                     )}
                   </div>
                 </div>
@@ -145,17 +145,17 @@ export const IcalManager = ({ propertyId, organizationId, open, onOpenChange }: 
             )}
           </div>
 
-          <div className="rounded-lg border p-3 space-y-3 bg-muted/30">
+          <div className="rounded-lg border p-3 space-y-3 bg-muted/30" data-testid="ical-add-form">
             <p className="text-sm font-medium">{t("ical.addNew")}</p>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1.5">
                 <Label className="text-xs">{t("ical.label")}</Label>
-                <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Airbnb FR" />
+                <Input data-testid="ical-label-input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Airbnb FR" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">{t("ical.source")}</Label>
                 <Select value={source} onValueChange={setSource}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger data-testid="ical-source-select"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {SOURCES.map((s) => (
                       <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>
@@ -166,9 +166,9 @@ export const IcalManager = ({ propertyId, organizationId, open, onOpenChange }: 
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">{t("ical.url")}</Label>
-              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." />
+              <Input data-testid="ical-url-input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." />
             </div>
-            <Button onClick={add} className="w-full" size="sm">
+            <Button onClick={add} data-testid="ical-add-button" className="w-full" size="sm">
               <Plus className="h-4 w-4 mr-1" /> {t("ical.add")}
             </Button>
           </div>

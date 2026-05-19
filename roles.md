@@ -36,11 +36,13 @@ A logged-in user who types a URL for a page they shouldn't see will still render
 
 ### Tables the code references but the live DB does NOT have
 
-`ad_banners`, `ad_impressions`, `booking_requests`, `coupon_redemptions`, `guest_albums`, `inventory_items`, `inventory_movements`, `message_templates`, `notifications`, `partner_coupons`, `partner_services`, `property_approval_events`, `property_ical_feeds`, `property_members`, `public_properties`, `reservation_rentals`, `reservations`, `user_roles`.
+`ad_banners`, `ad_impressions`, `booking_requests`, `coupon_redemptions`, `guest_albums`, `inventory_items`, `inventory_movements`, `message_templates`, `notifications`, `partner_coupons`, `partner_services`, `property_approval_events`, `property_members`, `public_properties`, `reservation_rentals`, `reservations`, `user_roles`.
 
 **Recently added (Task Ops Pack, May 2026):** `task_photos`, `cleaning_checklists`, `maintenance_tickets` are now provisioned via migrations `20260517100000`–`20260517100300`, plus storage buckets `task-photos` (private) and `maintenance-photos` (public). The features that depend on these tables — task photo proof, cleaning checklists, maintenance tickets queue, "report a problem" from the employee agenda — now work end-to-end.
 
 **Recently added (Guest Portal Foundation, May 2026):** `guest_accounts`, `guest_books`, `guest_messages`, `guest_uploads` are now provisioned via migrations `20260517110000`–`20260517110300`, plus the `guest-uploads` storage bucket and the `get_public_guest_book(_slug)` RPC for anon access. `GuestPortal.tsx` no longer depends on the missing `user_roles` table — it reads `profiles.role` per the project rule. Authenticated guest portal, public welcome book at `/g/:slug`, host↔guest messaging, and guest photo feed now work end-to-end. Partner services / coupons / ad banners on the same page still degrade to empty state until those tables ship.
+
+**Recently added (iCal Auto-Sync, May 2026):** `property_ical_feeds` is now provisioned via migration `20260517120000`, plus a unique index on `bookings (property_id, channel_slug, channel_ref)` to support upserts. The companion `supabase/functions/sync-ical` Edge Function fetches each feed, parses VEVENT blocks with line-folding per RFC 5545, and upserts stays into `bookings` with `channel_slug` = source (airbnb / booking / vrbo / expedia / manual) and `channel_ref` = VEVENT.UID. Owner-blocks (Airbnb "Not available") import as `bookings.status = 'blocked'`. The `IcalManager` dialog wires the "Sync now" button to the function via `supabase.functions.invoke("sync-ical", { body: { feed_id } })`. Scheduled batch sync can be configured via pg_cron — see the comment at the top of `index.ts` for the recommended `cron.schedule` invocation.
 
 This list is the root cause of nearly every **[BROKEN]** marker below.
 
@@ -148,9 +150,9 @@ Cannot access `/super-admin/*` — those routes render `<Unauthorized />`.
 ### What they can view
 
 - **Dashboard** — three KPI cards scoped to their org: total properties, total team members, total tasks. **[OK]** Plus a `WhatsAppReminders` panel that builds `wa.me` deeplinks. **[STUB — no real WhatsApp API]**
-- **Properties** — every property in their org with all private fields (`access_code`, `entry_instructions`, etc.), generated QR code. **[OK]** Approval timeline. **[BROKEN — `property_approval_events` table missing]** iCal sources. **[BROKEN — `property_ical_feeds` table missing]**
+- **Properties** — every property in their org with all private fields (`access_code`, `entry_instructions`, etc.), generated QR code. **[OK]** Approval timeline. **[BROKEN — `property_approval_events` table missing]** iCal sources. **[OK]** (May 2026)
 - **Availability** — calendar grid across all properties showing reservations. **[OK]** (uses `bookings`)
-- **Reservations** — full reservation list, filter and search. **[OK]** (live table is `bookings`; legacy code paths that still query `reservations` are **[BROKEN]**). iCal feed manager. **[BROKEN — `property_ical_feeds` missing]** WhatsApp template message composer. **[STUB — deeplinks only]** Guest-account creation dialog. **[BROKEN — `guest_accounts` table missing]**
+- **Reservations** — full reservation list, filter and search. **[OK]** (live table is `bookings`; legacy code paths that still query `reservations` are **[BROKEN]**). iCal feed manager. **[OK]** (May 2026 — see Task Ops iCal section above). WhatsApp template message composer. **[STUB — deeplinks only]** Guest-account creation dialog. **[OK]** (May 2026)
 - **Tasks** — every task in the org regardless of assignee. **[OK]**
 - **Reports** — generate PDF reservation reports filterable by year, month, and property. **[OK]** (uses `bookings` + jsPDF)
 - **Team** — every team member in the org (admins, cohosts, employees), with role and assignment info, plus inline cohost KPIs. **[OK]** for the profiles/property_cohosts read. Any code path that also reads `user_roles` is **[BROKEN]**.
@@ -160,8 +162,8 @@ Cannot access `/super-admin/*` — those routes render `<Unauthorized />`.
 
 ### What they can do
 
-- **Properties** — full create / read / update / delete on `properties`. **[OK]** Manage iCal subscriptions. **[BROKEN — `property_ical_feeds` missing]** Approve or reject property submissions. **[BROKEN — `property_approval_events` missing]**
-- **Reservations** — full CRUD on `bookings`. **[OK]** (anything in the code that still calls `.from("reservations")` is **[BROKEN]**). Generate guest accounts. **[BROKEN — `guest_accounts` missing]** Send WhatsApp templates. **[STUB — deeplinks only]**
+- **Properties** — full create / read / update / delete on `properties`. **[OK]** Manage iCal subscriptions. **[OK]** (May 2026) Approve or reject property submissions. **[BROKEN — `property_approval_events` missing]**
+- **Reservations** — full CRUD on `bookings`. **[OK]** (anything in the code that still calls `.from("reservations")` is **[BROKEN]**). Generate guest accounts. **[OK]** (May 2026) Send WhatsApp templates. **[STUB — deeplinks only]**
 - **Tasks** — create, edit, delete, assign, and re-assign tasks. **[OK]** but uses the `insertTaskWithSchemaFallback` hack because the live `tasks` schema diverges from migrations. **[MISMATCH]** Upload task photos to storage. **[OK]** Uses the `task-photos` bucket and the `task_photos` metadata table (provisioned May 2026). Use the cleaning checklist. **[OK]** Backed by `cleaning_checklists` table (provisioned May 2026). Mark tasks across any status. **[OK]**
 - **Team** — invite new members via the `create-team-member` edge function. **[OK]** Editable roles depend on whether you are admin or co-admin:
   - **Admins** can invite: co_admin, cohost, cleaner, driver, decorator, maintenance. **[OK]**
