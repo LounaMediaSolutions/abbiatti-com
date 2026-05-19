@@ -31,16 +31,16 @@ export default function MyInvoices() {
     (async () => {
       const { data: profile } = await supabase
         .from("profiles")
-        .select("organization_id")
+        .select("org_id")
         .eq("id", user.id)
         .maybeSingle();
-      if (!profile?.organization_id) return;
+      if (!profile?.org_id) return;
       const [{ data: org }, { data: inv }] = await Promise.all([
-        supabase.from("organizations").select("name").eq("id", profile.organization_id).maybeSingle(),
+        supabase.from("organizations").select("name").eq("id", profile.org_id).maybeSingle(),
         supabase
           .from("invoices")
           .select("*")
-          .eq("organization_id", profile.organization_id)
+          .eq("organization_id", profile.org_id)
           .order("issued_at", { ascending: false }),
       ]);
       setOrgName(org?.name ?? "");
@@ -75,7 +75,7 @@ export default function MyInvoices() {
         <FileText className="h-6 w-6 text-primary" />
         <div>
           <h1 className="text-2xl font-bold">Mes factures</h1>
-          <p className="text-sm text-muted-foreground">Historique des factures de votre agence</p>
+          <p className="text-sm text-muted-foreground">Historique des factures de votre organisation</p>
         </div>
       </header>
 

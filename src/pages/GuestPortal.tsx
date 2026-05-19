@@ -53,23 +53,53 @@ export default function GuestPortal() {
     if (loading) return;
     if (!user) { navigate("/auth"); return; }
     (async () => {
-      const { data: roles } = await supabase.from("user_roles").select("role, organization_id").eq("user_id", user.id);
-      const isGuest = (roles ?? []).some((r: any) => r.role === "guest");
-      const isStaff = (roles ?? []).some((r: any) => r.role === "admin" || r.role === "cohost");
+      // Per CLAUDE.md the canonical role source is `profiles.role`. The
+      // legacy `user_roles` table is not deployed in this environment.
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      const role = (profile?.role ?? "").toString();
+      const isGuest = role === "guest";
+      const isStaff =
+        role === "admin" ||
+        role === "co_admin" ||
+        role === "cohost" ||
+        role === "super_admin";
 
       let g: GuestAccount | null = null;
 
       if (preview) {
         if (!isStaff) { navigate("/", { replace: true }); return; }
-        // Load reservation, then guest_account (or fake one) for preview
-        const { data: res } = await supabase.from("reservations").select("*").eq("id", preview.reservationId).maybeSingle();
+        // Load the live reservation/booking, then look up an existing
+        // guest_account for preview. The deployed table is `bookings`;
+        // older deployments shipped a `reservations` table. Try `bookings`
+        // first and fall back so the preview keeps working on both.
+        let res: any = null;
+        const bookingRes = await supabase
+          .from("bookings")
+          .select("*")
+          .eq("id", preview.reservationId)
+          .maybeSingle();
+        if (bookingRes.data) {
+          res = bookingRes.data;
+        } else {
+          // Legacy fallback. Will silently no-op when the table is missing.
+          const legacy = await (supabase as any)
+            .from("reservations")
+            .select("*")
+            .eq("id", preview.reservationId)
+            .maybeSingle();
+          res = legacy?.data ?? null;
+        }
         if (!res) { toast.error("Réservation introuvable"); navigate(-1 as any); return; }
         const { data: gExisting } = await supabase
           .from("guest_accounts").select("*")
           .eq("reservation_id", res.id).is("deleted_at", null).maybeSingle();
         g = (gExisting as any) ?? {
           id: "preview-" + res.id,
-          organization_id: res.organization_id,
+          organization_id: res.organization_id ?? res.org_id,
           reservation_id: res.id,
           property_id: res.property_id,
           full_name: res.guest_name ?? "Aperçu",
@@ -96,22 +126,37 @@ export default function GuestPortal() {
         const { data: b } = await supabase.from("guest_books").select("*").eq("property_id", g!.property_id).eq("active", true).maybeSingle();
         setBook(b);
       }
-      const { data: ps } = await supabase
-        .from("partner_services")
+      // `partner_services` is part of a later cluster; treat its absence as
+      // "no partners yet" rather than a hard crash.
+      try {
+        const { data: ps, error: psErr } = await (supabase as any)
+          .from("partner_services")
+          .select("*")
+          .eq("organization_id", g!.organization_id)
+          .eq("active", true)
+          .eq("visible_to_guest", true)
+          .order("sort_order", { ascending: true });
+        if (psErr) throw psErr;
+        const tierRank: Record<string, number> = { gold: 0, silver: 1, standard: 2 };
+        const sorted = (ps ?? []).slice().sort((a: any, b: any) => {
+          const ra = tierRank[a.tier ?? "standard"] ?? 99;
+          const rb = tierRank[b.tier ?? "standard"] ?? 99;
+          if (ra !== rb) return ra - rb;
+          return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+        });
+        setPartners(sorted);
+      } catch {
+        setPartners([]);
+      }
+      // The live `rental_items` table uses `org_id`, not `organization_id`,
+      // and has no `sort_order` column. Order by name to keep the listing
+      // stable across deployments.
+      const { data: rs } = await supabase
+        .from("rental_items")
         .select("*")
-        .eq("organization_id", g!.organization_id)
+        .eq("org_id", g!.organization_id)
         .eq("active", true)
-        .eq("visible_to_guest", true)
-        .order("sort_order", { ascending: true });
-      const tierRank: Record<string, number> = { gold: 0, silver: 1, standard: 2 };
-      const sorted = (ps ?? []).slice().sort((a, b) => {
-        const ra = tierRank[a.tier ?? "standard"] ?? 99;
-        const rb = tierRank[b.tier ?? "standard"] ?? 99;
-        if (ra !== rb) return ra - rb;
-        return (a.sort_order ?? 0) - (b.sort_order ?? 0);
-      });
-      setPartners(sorted);
-      const { data: rs } = await supabase.from("rental_items").select("*").eq("organization_id", g!.organization_id).eq("active", true).order("sort_order");
+        .order("name");
       setRentals(rs ?? []);
       if (!String(g!.id).startsWith("preview-")) {
         await loadMessages(g!.id);
@@ -224,13 +269,13 @@ export default function GuestPortal() {
 
       <main className="max-w-4xl mx-auto p-4 space-y-4">
         {ga && <AdBanner placement="guest_hero" organizationId={ga.organization_id} />}
-        <Tabs defaultValue="info">
+        <Tabs defaultValue="info" data-testid="guest-portal-tabs">
           <TabsList className="grid grid-cols-5 w-full">
-            <TabsTrigger value="info">Infos</TabsTrigger>
-            <TabsTrigger value="services">Services</TabsTrigger>
-            <TabsTrigger value="chat">Chat</TabsTrigger>
-            <TabsTrigger value="share">Partager</TabsTrigger>
-            <TabsTrigger value="account">Compte</TabsTrigger>
+            <TabsTrigger value="info" data-testid="tab-info">Infos</TabsTrigger>
+            <TabsTrigger value="services" data-testid="tab-services">Services</TabsTrigger>
+            <TabsTrigger value="chat" data-testid="tab-chat">Chat</TabsTrigger>
+            <TabsTrigger value="share" data-testid="tab-share">Partager</TabsTrigger>
+            <TabsTrigger value="account" data-testid="tab-account">Compte</TabsTrigger>
           </TabsList>
 
           {/* INFO */}
@@ -367,18 +412,18 @@ export default function GuestPortal() {
 
           {/* CHAT */}
           <TabsContent value="chat" className="mt-4">
-            <Card className="flex flex-col h-[60vh]">
-              <div className="flex-1 overflow-auto p-4 space-y-2">
+            <Card className="flex flex-col h-[60vh]" data-testid="chat-panel">
+              <div className="flex-1 overflow-auto p-4 space-y-2" data-testid="chat-messages">
                 {messages.length === 0 && <p className="text-sm text-muted-foreground text-center">Posez votre question ✨</p>}
                 {messages.map((m) => (
-                  <div key={m.id} className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${m.sender_role === "guest" ? "ml-auto bg-primary text-primary-foreground" : "bg-muted"}`}>
+                  <div key={m.id} data-testid="chat-message" className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${m.sender_role === "guest" ? "ml-auto bg-primary text-primary-foreground" : "bg-muted"}`}>
                     {m.body}
                   </div>
                 ))}
               </div>
               <div className="border-t p-2 flex gap-2">
-                <Input value={newMsg} onChange={(e) => setNewMsg(e.target.value)} placeholder="Votre message..." onKeyDown={(e) => e.key === "Enter" && sendMessage()} />
-                <Button onClick={sendMessage}><MessageCircle className="h-4 w-4" /></Button>
+                <Input data-testid="chat-input" value={newMsg} onChange={(e) => setNewMsg(e.target.value)} placeholder="Votre message..." onKeyDown={(e) => e.key === "Enter" && sendMessage()} />
+                <Button data-testid="chat-send-button" onClick={sendMessage}><MessageCircle className="h-4 w-4" /></Button>
               </div>
             </Card>
           </TabsContent>

@@ -116,3 +116,93 @@ super-admin
 admin
 cohost
 cleaner, driver, decorator, maintenance, or staff
+
+==================
+= latest message =
+==================
+
+============================================================
+WHAT WE ALREADY HAVE (READY)
+============================================================
+
+1. DOMAIN & HOSTING
+   - abbiatti-com.vercel.app (working)
+   - Supabase project "escapar" (database ready)
+
+2. DATABASE (Supabase)
+   - Tables already exist: profiles, properties, tasks, bookings, property_cohosts, organizations, services
+   - Data exists (properties, bookings, etc.)
+
+3. BASIC AUTHENTICATION
+   - Supabase Auth is configured and working
+   - Users can log in (admin, cohost, employee)
+
+4. EMPLOYEE DASHBOARD (exists, works)
+   - /employee/tasks page
+   - Tasks list, photos, voice recording
+
+5. CREATE EMPLOYEE (works)
+   - Dialog to create employee with name + phone only
+   - Generates QR code for login
+
+============================================================
+WHAT IS BROKEN OR MISSING
+============================================================
+
+1. ROLE‑BASED REDIRECTION (BROKEN)
+   - Current: all users go to employee page after login
+   - Must fix: Super Admin → /super-admin, Admin → /admin, Cohost → /cohost, Employee → /employee/tasks
+
+2. ADMIN DASHBOARD (MISSING)
+   - No dashboard for property owners
+   - They cannot manage properties, see bookings, invite cohosts
+
+3. COHOST DASHBOARD (MISSING)
+   - No dashboard for cohosts
+   - They cannot assign tasks, validate employee work
+
+4. SUPER ADMIN DASHBOARD (MISSING)
+   - No dashboard to validate Admins or Partners
+   - No global statistics
+
+5. GUEST PORTAL (PARTIALLY DONE)
+   - I have a basic HTML/CSS version
+   - Missing: services booking, partner offers, photo upload with watermark, coupons, WhatsApp automation
+
+6. MARKETPLACE (MISSING)
+   - Admins cannot rent items to other Admins yet
+
+7. REVIEW SYSTEM (MISSING)
+   - Guests cannot rate properties, cohosts cannot rate employees
+
+8. WHATSAPP API (NOT CONFIGURED)
+   - No automatic messages (welcome, reminders, check-out)
+
+============================================================
+WHAT YOU CAN HELP ME WITH (PAID TASKS)
+============================================================
+
+Here are the tasks I need your help with. You can pick any:
+
+PRIORITY 1 (urgent – fix broken things):
+
+- [ ] Fix role‑based redirection (all users go to wrong page)
+- [ ] Create basic Admin dashboard (CRUD properties, invite cohosts)
+- [ ] Create basic Cohost dashboard (tasks, employee management)
+
+PRIORITY 2 (complete guest portal):
+
+- [ ] Finish guest page (services booking, WhatsApp integration)
+- [ ] Add photo upload with watermark
+- [ ] Add partner offers display
+
+PRIORITY 3 (marketplace & reviews):
+
+- [ ] Add marketplace (rent items between hosts)
+- [ ] Add review system (ratings and comments)
+
+PRIORITY 4 (advanced):
+
+- [ ] WhatsApp API setup (templates, automation)
+- [ ] Security audit and performance optimization
+- [ ] Deploy to escapar.net

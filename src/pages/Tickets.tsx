@@ -44,8 +44,8 @@ const Tickets = () => {
 
   useEffect(() => {
     if (!user) return;
-    supabase.from("profiles").select("organization_id").eq("id", user.id).maybeSingle()
-      .then(({ data }) => setOrgId(data?.organization_id ?? null));
+    supabase.from("profiles").select("org_id").eq("id", user.id).maybeSingle()
+      .then(({ data }) => setOrgId(data?.org_id ?? null));
   }, [user]);
 
   const load = async () => {
@@ -53,7 +53,7 @@ const Tickets = () => {
     setLoading(true);
     const [tRes, pRes] = await Promise.all([
       supabase.from("maintenance_tickets").select("*").eq("organization_id", orgId).order("created_at", { ascending: false }),
-      supabase.from("properties").select("id, name").eq("organization_id", orgId),
+      supabase.from("properties").select("id, name").eq("org_id", orgId),
     ]);
     setTickets((tRes.data as any) || []);
     const m: Record<string, string> = {};
@@ -83,7 +83,7 @@ const Tickets = () => {
           <p className="text-sm text-muted-foreground">Problèmes signalés par les voyageurs via QR code.</p>
         </div>
         <Select value={filter} onValueChange={setFilter}>
-          <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-44" data-testid="tickets-filter"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Tous</SelectItem>
             <SelectItem value="new">Nouveau</SelectItem>
@@ -104,7 +104,7 @@ const Tickets = () => {
       ) : (
         <div className="grid gap-3">
           {filtered.map((t) => (
-            <Card key={t.id} className="p-4">
+            <Card key={t.id} className="p-4" data-testid="ticket-card">
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -114,7 +114,7 @@ const Tickets = () => {
                       <Clock className="w-3 h-3" />{formatDistanceToNow(new Date(t.created_at), { locale: fr, addSuffix: true })}
                     </span>
                   </div>
-                  <h3 className="font-semibold">{t.title}</h3>
+                  <h3 className="font-semibold" data-testid="ticket-title">{t.title}</h3>
                   <p className="text-sm text-muted-foreground">{props[t.property_id] || "—"}</p>
                   {t.description && <p className="text-sm mt-2 whitespace-pre-wrap">{t.description}</p>}
                   {(t.reporter_name || t.reporter_phone) && (
@@ -133,7 +133,7 @@ const Tickets = () => {
                   )}
                 </div>
                 <Select value={t.status} onValueChange={(v) => updateStatus(t.id, v)}>
-                  <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-36" data-testid="ticket-status-select"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="new">Nouveau</SelectItem>
                     <SelectItem value="in_progress">En cours</SelectItem>

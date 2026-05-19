@@ -7,6 +7,7 @@ import {
   hasCredentials,
   loginAs,
   staffCredentials,
+  superAdminCredentials,
 } from "./helpers/auth";
 
 test.describe("Login and role-based redirection", () => {
@@ -25,43 +26,73 @@ test.describe("Login and role-based redirection", () => {
   });
 
   test.describe("manager login", () => {
-    test.skip(
-      !hasCredentials(adminCredentials),
-      "E2E_ADMIN_EMAIL/PASSWORD not set",
-    );
+    test.describe("super admin", () => {
+      test.skip(
+        !hasCredentials(superAdminCredentials),
+        "E2E_SUPER_ADMIN_EMAIL/PASSWORD not set",
+      );
 
-    test("sends an admin to the admin dashboard", async ({ page }) => {
-      await clearAuthState(page);
-      await loginAs(page, adminCredentials.email, adminCredentials.password, {
-        entryPath: "/auth",
-        expectedPathname: "/admin/dashboard",
+      test("sends a super admin to the super admin dashboard", async ({
+        page,
+      }) => {
+        await clearAuthState(page);
+        await loginAs(
+          page,
+          superAdminCredentials.email,
+          superAdminCredentials.password,
+          {
+            entryPath: "/auth",
+            expectedPathname: "/super-admin",
+          },
+        );
+
+        await expect(page).toHaveURL(/\/super-admin$/);
+        await expectAuthenticatedShell(page, superAdminCredentials.email, {
+          requireEmail: false,
+          readyLocator: page.getByRole("heading", { name: /super admin/i }),
+        });
       });
-
-      await expect(page).toHaveURL(/\/admin\/dashboard$/);
-      await expectAuthenticatedShell(page, adminCredentials.email);
     });
 
-    test("returns an admin to the originally requested protected route after login", async ({
-      page,
-    }) => {
-      await clearAuthState(page);
-      await page.goto("/settings");
+    test.describe("admin", () => {
+      test.skip(
+        !hasCredentials(adminCredentials),
+        "E2E_ADMIN_EMAIL/PASSWORD not set",
+      );
 
-      await page.waitForURL(/\/welcome\?redirect=%2Fsettings$/, {
-        timeout: 15_000,
+      test("sends an admin to the admin dashboard", async ({ page }) => {
+        await clearAuthState(page);
+        await loginAs(page, adminCredentials.email, adminCredentials.password, {
+          entryPath: "/auth",
+          expectedPathname: "/admin/dashboard",
+        });
+
+        await expect(page).toHaveURL(/\/admin\/dashboard$/);
+        await expectAuthenticatedShell(page, adminCredentials.email);
       });
 
-      await page
-        .getByRole("button", { name: /se connecter/i })
-        .first()
-        .click();
+      test("returns an admin to the originally requested protected route after login", async ({
+        page,
+      }) => {
+        await clearAuthState(page);
+        await page.goto("/settings");
 
-      await loginAs(page, adminCredentials.email, adminCredentials.password, {
-        expectedPathname: "/settings",
+        await page.waitForURL(/\/welcome\?redirect=%2Fsettings$/, {
+          timeout: 15_000,
+        });
+
+        await page
+          .getByRole("button", { name: /se connecter/i })
+          .first()
+          .click();
+
+        await loginAs(page, adminCredentials.email, adminCredentials.password, {
+          expectedPathname: "/settings",
+        });
+
+        await expect(page).toHaveURL(/\/settings$/);
+        await expectAuthenticatedShell(page, adminCredentials.email);
       });
-
-      await expect(page).toHaveURL(/\/settings$/);
-      await expectAuthenticatedShell(page, adminCredentials.email);
     });
   });
 

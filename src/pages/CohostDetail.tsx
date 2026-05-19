@@ -39,7 +39,7 @@ export default function CohostDetail() {
     (async () => {
       setLoading(true);
       const [profR, pmR] = await Promise.all([
-        supabase.from("profiles").select("id,full_name,phone,avatar_url,organization_id").eq("id", id).maybeSingle(),
+        supabase.from("profiles").select("id,full_name,phone,avatar_url,org_id").eq("id", id).maybeSingle(),
         supabase.from("property_members").select("id,property_id,role,user_id,organization_id").or(`user_id.eq.${id}`),
       ]);
       setProfile(profR.data);

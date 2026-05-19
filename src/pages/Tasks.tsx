@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
@@ -32,7 +33,10 @@ interface Task {
   org_id: string;
   property_id: string | null;
   assigned_to: string | null;
-  created_by: string;
+  // Some deployments expose a `created_by` column, others only `assigned_by`.
+  // Keep both optional so the UI can fall back gracefully.
+  created_by?: string | null;
+  assigned_by?: string | null;
   title: string;
   type: TaskType;
   status: TaskStatus;
@@ -47,6 +51,51 @@ interface Task {
   completed_at?: string | null;
 }
 
+// Helper so we don't have to remember the column name in two places.
+const isTaskAuthor = (task: { created_by?: string | null; assigned_by?: string | null }, userId?: string | null) =>
+  Boolean(userId) && (task.created_by === userId || task.assigned_by === userId);
+
+// Columns that the live database may not actually have. We try the insert
+// with all of them, and if the schema cache complains about a specific one,
+// we drop it and retry. This keeps the frontend resilient to the gap between
+// the local migrations and the deployed schema.
+const TASK_INSERT_OPTIONAL_COLUMNS = [
+  "created_by",
+  "assigned_by",
+  "type",
+  "task_type",
+  "due_at",
+  "scheduled_date",
+  "scheduled_time",
+  "organization_id",
+  "org_id",
+] as const;
+
+const extractMissingTaskColumn = (error: { message?: string } | null) => {
+  const message = error?.message ?? "";
+  const schemaCacheMatch = message.match(/'([^']+)' column of 'tasks'/i);
+  if (schemaCacheMatch?.[1]) return schemaCacheMatch[1];
+  const postgresMatch = message.match(/column tasks\.([a-z_]+)/i);
+  return postgresMatch?.[1] ?? null;
+};
+
+const insertTaskWithSchemaFallback = async (
+  initialPayload: Record<string, unknown>,
+) => {
+  let payload = { ...initialPayload };
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const result = await supabase.from("tasks").insert([payload] as any);
+    if (!result.error) return { error: null as null };
+
+    const missingColumn = extractMissingTaskColumn(result.error);
+    if (!missingColumn || !(missingColumn in payload)) {
+      return { error: result.error };
+    }
+    delete payload[missingColumn];
+  }
+  return { error: new Error("Could not reconcile the task payload with the current schema.") };
+};
+
 interface Property { id: string; name: string; }
 interface Member { id: string; full_name: string | null; }
 interface TaskPhoto {
@@ -58,6 +107,35 @@ const STATUS_VARIANTS: Record<TaskStatus, string> = {
   in_progress: "bg-amber-500 text-white",
   done: "bg-emerald-500 text-white",
   issue: "bg-destructive text-destructive-foreground",
+};
+
+const VALID_TASK_STATUSES: TaskStatus[] = ["todo", "in_progress", "done", "issue"];
+const VALID_TASK_TYPES = TASK_TYPES as readonly TaskType[];
+
+// The live database splits some columns differently from what this UI expects
+// (e.g. `task_type` instead of `type`, `scheduled_date` instead of `due_at`).
+// Normalize every row coming out of Supabase so the rest of the component can
+// keep using the historical field names.
+const normalizeTaskRow = (row: any): Task => {
+  const type = (VALID_TASK_TYPES.includes(row?.type) ? row.type : VALID_TASK_TYPES.includes(row?.task_type) ? row.task_type : "other") as TaskType;
+  const status = (VALID_TASK_STATUSES.includes(row?.status) ? row.status : "todo") as TaskStatus;
+  const dueAt = row?.due_at ?? (row?.scheduled_date
+    ? `${row.scheduled_date}${row?.scheduled_time ? `T${row.scheduled_time}` : ""}`
+    : null);
+  const priorityNumeric = typeof row?.priority === "number"
+    ? row.priority
+    : typeof row?.priority === "string" && row.priority.trim() !== ""
+    ? Number.isFinite(Number(row.priority)) ? Number(row.priority) : 2
+    : 2;
+  return {
+    ...row,
+    type,
+    status,
+    priority: priorityNumeric,
+    due_at: dueAt,
+    title: row?.title ?? "",
+    org_id: row?.org_id,
+  } as Task;
 };
 
 const Tasks = () => {
@@ -74,6 +152,9 @@ const Tasks = () => {
   const [openNew, setOpenNew] = useState(false);
   const [selected, setSelected] = useState<Task | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const [form, setForm] = useState({
     title: "", type: "cleaning" as TaskType, property_id: "", assigned_to: "",
@@ -85,18 +166,54 @@ const Tasks = () => {
   const loadAll = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const { data: profile } = await supabase.from("profiles").select("org_id").eq("id", user.id).maybeSingle();
-    if (!profile?.org_id) { setLoading(false); return; }
-    setOrgId(profile.org_id);
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("org_id, pending_org_id, role")
+      .eq("id", user.id)
+      .maybeSingle();
 
     const access = await getUserAccess(user.id);
     const baseRoles = access.role ? [access.role] : [];
     const isScopedCohost = access.isCohost && !access.isAdmin;
 
+    // For admins/super-admins who haven't been attached to an org yet (notably
+    // the global super-admin, but also admins whose pending invite hasn't been
+    // accepted via the banner), fall back to the first available organization
+    // so they can still see and create tasks instead of bouncing off an empty
+    // page. Cohosts/staff keep the strict org_id requirement.
+    let effectiveOrgId = profile?.org_id ?? null;
+    if (!effectiveOrgId && (access.isSuperAdmin || access.isAdmin)) {
+      if (profile?.pending_org_id) {
+        effectiveOrgId = profile.pending_org_id;
+      } else {
+        const { data: firstOrg } = await supabase
+          .from("organizations")
+          .select("id")
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (firstOrg?.id) effectiveOrgId = firstOrg.id;
+      }
+    }
+
+    if (!effectiveOrgId) {
+      // Preserve the original "no org → bail early" behaviour for cohosts and
+      // staff; they should not see manager UI without an org. But for
+      // admins/super-admins we still want to surface their role so the page
+      // chrome (e.g. the "New task" button) renders — clicking the button
+      // will then call createTask which has its own org fallback.
+      if (access.isSuperAdmin || access.isAdmin) {
+        setMyRoles(baseRoles);
+      }
+      setLoading(false);
+      return;
+    }
+    setOrgId(effectiveOrgId);
+
     const { data: allTasks } = await supabase
       .from("tasks")
       .select("*")
-      .eq("org_id", profile.org_id)
+      .eq("org_id", effectiveOrgId)
       .order("created_at", { ascending: false });
 
     if (isScopedCohost) {
@@ -113,25 +230,25 @@ const Tasks = () => {
         supabase
           .from("profiles")
           .select("id,full_name")
-          .eq("org_id", profile.org_id)
+          .eq("org_id", effectiveOrgId)
           .in("role", ["cleaner", "driver", "decorator", "maintenance", "staff"]),
       ]);
 
       setMyRoles(baseRoles);
       setProperties((propsRes.data ?? []) as Property[]);
       setMembers((profsRes.data ?? []) as Member[]);
-      setTasks(((allTasks ?? []) as Task[]).filter((task) => task.property_id && allowedIds.includes(task.property_id)));
+      setTasks((allTasks ?? []).map(normalizeTaskRow).filter((task) => task.property_id && allowedIds.includes(task.property_id)));
       setLoading(false);
       return;
     }
 
     const [propsRes, profsRes] = await Promise.all([
-      supabase.from("properties").select("id,name").eq("org_id", profile.org_id).order("name"),
-      supabase.from("profiles").select("id,full_name").eq("org_id", profile.org_id),
+      supabase.from("properties").select("id,name").eq("org_id", effectiveOrgId).order("name"),
+      supabase.from("profiles").select("id,full_name").eq("org_id", effectiveOrgId),
     ]);
 
     setMyRoles(baseRoles);
-    setTasks((allTasks ?? []) as Task[]);
+    setTasks((allTasks ?? []).map(normalizeTaskRow));
     setProperties((propsRes.data ?? []) as Property[]);
     setMembers((profsRes.data ?? []) as Member[]);
     setLoading(false);
@@ -147,20 +264,73 @@ const Tasks = () => {
 
   const createTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!orgId || !user) return;
+    if (!user) return;
     if (!form.title.trim()) return toast.error(t("tasks.taskTitle"));
-    const { error } = await supabase.from("tasks").insert([{
-      org_id: orgId,
+
+    // Last-resort fallback for admins/super-admins who reached this dialog
+    // without an explicit org (orgId was never set because loadAll bailed
+    // early). Pick the first available org so the insert has a valid
+    // organization to attach the task to.
+    let writeOrgId = orgId;
+    if (!writeOrgId) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("org_id, pending_org_id")
+        .eq("id", user.id)
+        .maybeSingle();
+      writeOrgId = profile?.org_id ?? profile?.pending_org_id ?? null;
+      if (!writeOrgId) {
+        const { data: firstOrg } = await supabase
+          .from("organizations")
+          .select("id")
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        writeOrgId = firstOrg?.id ?? null;
+      }
+      if (!writeOrgId) {
+        toast.error("No organization available for this task");
+        return;
+      }
+      setOrgId(writeOrgId);
+    }
+
+    const dueIso = form.due_at ? new Date(form.due_at).toISOString() : null;
+    const scheduledDate = form.due_at ? form.due_at.slice(0, 10) : null;
+    const scheduledTime = form.due_at && form.due_at.length >= 16 ? form.due_at.slice(11, 16) : null;
+
+    // Some deployments require `ref_number` (NOT NULL, no DB default). Generate
+    // a short, sortable identifier client-side; the fallback helper drops the
+    // field if the column doesn't exist in this deployment.
+    const refNumber = `TSK-${Date.now().toString(36).toUpperCase()}-${Math.random()
+      .toString(36)
+      .slice(2, 6)
+      .toUpperCase()}`;
+
+    // Build a payload that covers both the "migrations" schema (created_by/type/due_at)
+    // and the live schema (assigned_by/task_type/scheduled_date+time). The retry helper
+    // strips any column the schema cache rejects.
+    const { error } = await insertTaskWithSchemaFallback({
+      // Send both common org column names — older migrations used
+      // `organization_id`, the live schema uses `org_id`. The fallback helper
+      // drops whichever the schema cache rejects so this works on either.
+      org_id: writeOrgId,
+      organization_id: writeOrgId,
       created_by: user.id,
+      assigned_by: user.id,
+      ref_number: refNumber,
       title: form.title.trim(),
       type: form.type,
+      task_type: form.type,
       property_id: form.property_id || null,
       assigned_to: form.assigned_to || null,
-      priority: form.priority,
-      due_at: form.due_at ? new Date(form.due_at).toISOString() : null,
+      priority: String(form.priority),
+      due_at: dueIso,
+      scheduled_date: scheduledDate,
+      scheduled_time: scheduledTime,
       guest_name: form.guest_name || null,
-    }]);
-    if (error) return toast.error(error.message);
+    });
+    if (error) return toast.error((error as { message?: string }).message ?? String(error));
     toast.success(t("tasks.created"));
     setOpenNew(false);
     setForm({ title: "", type: "cleaning", property_id: "", assigned_to: "", priority: 2, due_at: "", guest_name: "" });
@@ -169,10 +339,55 @@ const Tasks = () => {
 
   const confirmDelete = async () => {
     if (!deleteId) return;
-    const { error } = await supabase.from("tasks").delete().eq("id", deleteId);
-    if (error) toast.error(error.message); else toast.success(t("tasks.deleted"));
+    const id = deleteId;
+    // Optimistic: remove the card immediately. Skipping the loadAll() roundtrip
+    // (auth + properties + members + tasks) eliminates the page-wide Loading
+    // flicker after every delete.
+    setTasks((prev) => prev.filter((tk) => tk.id !== id));
+    setSelectedIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
     setDeleteId(null);
-    loadAll();
+    const { error } = await supabase.from("tasks").delete().eq("id", id);
+    if (error) {
+      toast.error(error.message);
+      loadAll(); // resync on failure
+      return;
+    }
+    toast.success(t("tasks.deleted"));
+  };
+
+  const confirmBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    setBulkDeleting(true);
+    setTasks((prev) => prev.filter((tk) => !selectedIds.has(tk.id)));
+    const { error } = await supabase.from("tasks").delete().in("id", ids);
+    setBulkDeleting(false);
+    setBulkConfirmOpen(false);
+    setSelectedIds(new Set());
+    if (error) {
+      toast.error(error.message);
+      loadAll();
+      return;
+    }
+    toast.success(t("tasks.bulkDeleted", { count: ids.length, defaultValue: `${ids.length} supprimées` }));
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+  const selectAllVisible = (visibleTasks: Task[]) => {
+    setSelectedIds(new Set(visibleTasks.map((t) => t.id)));
   };
 
   if (selected) {
@@ -189,19 +404,62 @@ const Tasks = () => {
 
   return (
     <div className="space-y-4 max-w-5xl mx-auto">
+      {isManager && selectedIds.size > 0 && (
+        <Card
+          className="sticky top-2 z-30 flex items-center justify-between gap-3 p-3 bg-primary text-primary-foreground shadow-card"
+          data-testid="task-bulk-bar"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="font-semibold" data-testid="task-bulk-count">
+              {selectedIds.size} {t("tasks.bulk.selected", { defaultValue: "sélectionnée(s)" })}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-primary-foreground hover:bg-primary-foreground/10 h-8"
+              onClick={clearSelection}
+            >
+              {t("tasks.bulk.clear", { defaultValue: "Effacer" })}
+            </Button>
+            {selectedIds.size < visible.length && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-primary-foreground hover:bg-primary-foreground/10 h-8"
+                onClick={() => selectAllVisible(visible)}
+              >
+                {t("tasks.bulk.selectAll", { defaultValue: "Tout sélectionner" })}
+              </Button>
+            )}
+          </div>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => setBulkConfirmOpen(true)}
+            disabled={bulkDeleting}
+            data-testid="task-bulk-delete-button"
+          >
+            <Trash2 className="h-4 w-4 mr-1.5" />
+            {t("tasks.bulk.deleteN", {
+              count: selectedIds.size,
+              defaultValue: `Supprimer ${selectedIds.size}`,
+            })}
+          </Button>
+        </Card>
+      )}
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl md:text-3xl font-bold text-secondary">{t("tasks.title")}</h1>
         {isManager && (
           <Dialog open={openNew} onOpenChange={setOpenNew}>
             <DialogTrigger asChild>
-              <Button>
+              <Button data-testid="open-task-dialog">
                 <Plus className="h-4 w-4 mr-2" />
                 {t("tasks.add")}
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
               <DialogHeader><DialogTitle>{t("tasks.add")}</DialogTitle></DialogHeader>
-              <form onSubmit={createTask} className="space-y-3">
+              <form data-testid="task-form" onSubmit={createTask} className="space-y-3">
                 <div className="space-y-1.5">
                   <Label>{t("tasks.selectType")}</Label>
                   <div className="grid grid-cols-3 gap-2">
@@ -230,7 +488,12 @@ const Tasks = () => {
 
                 <div className="space-y-1.5">
                   <Label>{t("tasks.taskTitle")}</Label>
-                  <Input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+                  <Input
+                    data-testid="task-title-input"
+                    required
+                    value={form.title}
+                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  />
                 </div>
 
                 <div className="space-y-1.5">
@@ -279,7 +542,7 @@ const Tasks = () => {
 
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setOpenNew(false)}>{t("tasks.cancel")}</Button>
-                  <Button type="submit">{t("tasks.save")}</Button>
+                  <Button type="submit" data-testid="task-save-button">{t("tasks.save")}</Button>
                 </DialogFooter>
               </form>
             </DialogContent>
@@ -323,9 +586,31 @@ const Tasks = () => {
             return (
               <Card
                 key={tk.id}
-                onClick={() => setSelected(tk)}
-                className="p-4 shadow-card hover:shadow-soft transition cursor-pointer flex gap-3"
+                data-testid="task-card"
+                data-selected={selectedIds.has(tk.id) ? "true" : "false"}
+                onClick={() => {
+                  if (selectedIds.size > 0) {
+                    // While selecting, clicks toggle instead of opening detail.
+                    toggleSelect(tk.id);
+                  } else {
+                    setSelected(tk);
+                  }
+                }}
+                className={cn(
+                  "p-4 shadow-card hover:shadow-soft transition cursor-pointer flex gap-3",
+                  selectedIds.has(tk.id) && "ring-2 ring-primary",
+                )}
               >
+                {isManager && (
+                  <Checkbox
+                    checked={selectedIds.has(tk.id)}
+                    onCheckedChange={() => toggleSelect(tk.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="mt-1 shrink-0"
+                    aria-label={`Select ${tk.title}`}
+                    data-testid="task-card-checkbox"
+                  />
+                )}
                 <div className={cn("h-12 w-12 rounded-xl flex items-center justify-center text-white shrink-0", TASK_TYPE_COLORS[tk.type])}>
                   <Icon className="h-6 w-6" />
                 </div>
@@ -367,6 +652,42 @@ const Tasks = () => {
           <AlertDialogFooter>
             <AlertDialogCancel>{t("tasks.cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDelete}>{t("tasks.delete")}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={bulkConfirmOpen}
+        onOpenChange={(o) => !o && !bulkDeleting && setBulkConfirmOpen(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("tasks.bulk.confirmTitle", {
+                count: selectedIds.size,
+                defaultValue: `Supprimer ${selectedIds.size} tâche(s) ?`,
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("tasks.bulk.confirmBody", {
+                defaultValue: "Cette action est irréversible.",
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleting}>{t("tasks.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmBulkDelete}
+              disabled={bulkDeleting}
+              data-testid="task-bulk-delete-confirm"
+            >
+              {bulkDeleting
+                ? t("tasks.bulk.deleting", { defaultValue: "Suppression…" })
+                : t("tasks.bulk.deleteN", {
+                    count: selectedIds.size,
+                    defaultValue: `Supprimer ${selectedIds.size}`,
+                  })}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -514,7 +835,7 @@ const TaskDetail = ({
         <CleaningChecklist
           taskId={task.id}
           organizationId={task.org_id}
-          canEdit={task.assigned_to === user?.id || task.created_by === user?.id}
+          canEdit={task.assigned_to === user?.id || isTaskAuthor(task, user?.id)}
           onAllDone={setChecklistComplete}
         />
       )}
@@ -611,7 +932,7 @@ const TaskDetail = ({
       </div>
 
       {/* Action buttons - sticky at bottom feeling */}
-      {(task.assigned_to === user?.id || task.created_by === user?.id) && (
+      {(task.assigned_to === user?.id || isTaskAuthor(task, user?.id)) && (
         <div className="grid grid-cols-1 gap-3 pt-2">
           {task.status === "todo" && (
             <Button size="lg" className="h-16 text-lg" onClick={handleStart}>

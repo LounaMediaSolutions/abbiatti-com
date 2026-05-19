@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       audit_log: {
@@ -290,6 +265,7 @@ export type Database = {
       organizations: {
         Row: {
           active: boolean | null
+          brand_color: string | null
           brand_name: string | null
           city: string | null
           contact_email: string | null
@@ -300,6 +276,7 @@ export type Database = {
           features: Json | null
           id: string
           logo_url: string | null
+          max_cohosts: number
           max_employees: number | null
           max_properties: number | null
           name: string
@@ -310,12 +287,14 @@ export type Database = {
           secondary_color: string | null
           slug: string | null
           subscription_status: string | null
+          suspended: boolean
           trial_ends_at: string | null
           updated_at: string | null
           whatsapp: string | null
         }
         Insert: {
           active?: boolean | null
+          brand_color?: string | null
           brand_name?: string | null
           city?: string | null
           contact_email?: string | null
@@ -326,6 +305,7 @@ export type Database = {
           features?: Json | null
           id?: string
           logo_url?: string | null
+          max_cohosts?: number
           max_employees?: number | null
           max_properties?: number | null
           name: string
@@ -336,12 +316,14 @@ export type Database = {
           secondary_color?: string | null
           slug?: string | null
           subscription_status?: string | null
+          suspended?: boolean
           trial_ends_at?: string | null
           updated_at?: string | null
           whatsapp?: string | null
         }
         Update: {
           active?: boolean | null
+          brand_color?: string | null
           brand_name?: string | null
           city?: string | null
           contact_email?: string | null
@@ -352,6 +334,7 @@ export type Database = {
           features?: Json | null
           id?: string
           logo_url?: string | null
+          max_cohosts?: number
           max_employees?: number | null
           max_properties?: number | null
           name?: string
@@ -362,6 +345,7 @@ export type Database = {
           secondary_color?: string | null
           slug?: string | null
           subscription_status?: string | null
+          suspended?: boolean
           trial_ends_at?: string | null
           updated_at?: string | null
           whatsapp?: string | null
@@ -376,8 +360,12 @@ export type Database = {
           email: string | null
           full_name: string | null
           id: string
+          invitation_status: string | null
+          invited_by: string | null
           language: string | null
           org_id: string | null
+          pending_org_id: string | null
+          pending_role: string | null
           phone: string | null
           role: string | null
           updated_at: string | null
@@ -390,8 +378,12 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id: string
+          invitation_status?: string | null
+          invited_by?: string | null
           language?: string | null
           org_id?: string | null
+          pending_org_id?: string | null
+          pending_role?: string | null
           phone?: string | null
           role?: string | null
           updated_at?: string | null
@@ -404,8 +396,12 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id?: string
+          invitation_status?: string | null
+          invited_by?: string | null
           language?: string | null
           org_id?: string | null
+          pending_org_id?: string | null
+          pending_role?: string | null
           phone?: string | null
           role?: string | null
           updated_at?: string | null
@@ -415,6 +411,13 @@ export type Database = {
           {
             foreignKeyName: "profiles_org_id_fkey"
             columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_pending_org_id_fkey"
+            columns: ["pending_org_id"]
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
@@ -997,7 +1000,9 @@ export type Database = {
     Functions: {
       is_org_admin: { Args: never; Returns: boolean }
       is_org_staff: { Args: never; Returns: boolean }
-      is_super_admin: { Args: never; Returns: boolean }
+      is_super_admin:
+        | { Args: never; Returns: boolean }
+        | { Args: { _user_id: string }; Returns: boolean }
       my_org_id: { Args: never; Returns: string }
     }
     Enums: {
@@ -1127,9 +1132,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

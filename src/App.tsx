@@ -34,6 +34,8 @@ import BookingRequests from "./pages/BookingRequests";
 import Reports from "./pages/Reports";
 import SuperAdmin from "./pages/SuperAdmin";
 import SuperAdminBilling from "./pages/SuperAdminBilling";
+import SuperAdminOrg from "./pages/SuperAdminOrg";
+import SuperAdminProfiles from "./pages/SuperAdminProfiles";
 import SuperAdminStaff from "./pages/SuperAdminStaff";
 import MyInvoices from "./pages/MyInvoices";
 import GuestPortal from "./pages/GuestPortal";
@@ -63,9 +65,46 @@ const App = () => (
             <Route path="/redeem/:code" element={<RedeemCoupon />} />
             <Route path="/guest" element={<ProtectedRoute><GuestPortal /></ProtectedRoute>} />
             <Route path="/guest-preview/:reservationId" element={<ProtectedRoute><GuestPortal /></ProtectedRoute>} />
-            <Route path="/super-admin" element={<SuperAdmin />} />
-            <Route path="/super-admin/billing" element={<SuperAdminBilling />} />
-            <Route path="/super-admin/staff" element={<SuperAdminStaff />} />
+            <Route
+              path="/super-admin"
+              element={
+                <ProtectedRoute>
+                  <AppLayout><SuperAdmin /></AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/super-admin/orgs/:id"
+              element={
+                <ProtectedRoute>
+                  <AppLayout><SuperAdminOrg /></AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/super-admin/billing"
+              element={
+                <ProtectedRoute>
+                  <AppLayout><SuperAdminBilling /></AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/super-admin/profiles"
+              element={
+                <ProtectedRoute>
+                  <AppLayout><SuperAdminProfiles /></AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/super-admin/staff"
+              element={
+                <ProtectedRoute>
+                  <AppLayout><SuperAdminStaff /></AppLayout>
+                </ProtectedRoute>
+              }
+            />
             <Route path="/invoices" element={<ProtectedRoute><AppLayout><MyInvoices /></AppLayout></ProtectedRoute>} />
             <Route
               path="/"

@@ -15,9 +15,16 @@ export type AppRole =
 
 export const ADMIN_ROLES = ["super_admin", "admin", "co_admin"] as const;
 export const EMPLOYEE_ROLES = ["cleaner", "driver", "decorator", "maintenance", "staff"] as const;
+export const ORG_ADMIN_ROLES = ["admin", "co_admin"] as const;
 
 export const isAdminRole = (role: string | null | undefined) =>
   !!role && ADMIN_ROLES.includes(role as (typeof ADMIN_ROLES)[number]);
+
+export const isSuperAdminRole = (role: string | null | undefined) =>
+  role === "super_admin";
+
+export const isOrgAdminRole = (role: string | null | undefined) =>
+  !!role && ORG_ADMIN_ROLES.includes(role as (typeof ORG_ADMIN_ROLES)[number]);
 
 export const isEmployeeRole = (role: string | null | undefined) =>
   !!role && EMPLOYEE_ROLES.includes(role as (typeof EMPLOYEE_ROLES)[number]);
@@ -26,7 +33,10 @@ export const getDashboardPathForRole = (
   role: string | null | undefined,
   hasCohostAssignments = false,
 ) => {
-  if (isAdminRole(role)) return "/admin/dashboard";
+  if (isSuperAdminRole(role)) return "/super-admin";
+  if (!!role && ORG_ADMIN_ROLES.includes(role as (typeof ORG_ADMIN_ROLES)[number])) {
+    return "/admin/dashboard";
+  }
   if (role === "cohost" || hasCohostAssignments) return "/cohost/dashboard";
   return "/employee";
 };
@@ -39,6 +49,25 @@ export async function isGlobalAdmin(userId: string) {
     .maybeSingle();
 
   return isAdminRole(profile?.role);
+}
+
+export async function isSuperAdminUser(userId: string) {
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (isSuperAdminRole(profile?.role)) return true;
+
+  const { data: superAdminRole } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("role", "super_admin")
+    .maybeSingle();
+
+  return !!superAdminRole;
 }
 
 export async function getPropertyPermissions(userId: string, propertyId: string) {
@@ -69,6 +98,7 @@ export async function getUserAccess(userId: string) {
     .maybeSingle();
 
   const role = (profile?.role ?? null) as AppRole | null;
+  const isSuperAdmin = isSuperAdminRole(role);
   const isAdmin = isAdminRole(role);
 
   const { data: cohosts } = await supabase
@@ -87,6 +117,7 @@ export async function getUserAccess(userId: string) {
     role,
     dashboardPath,
     isManager,
+    isSuperAdmin,
     isAdmin,
     isCohost,
     isStaff: !isManager,

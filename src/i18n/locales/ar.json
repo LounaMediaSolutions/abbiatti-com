@@ -23,6 +23,8 @@
   },
   "nav": {
     "dashboard": "لوحة التحكم",
+    "platform": "المنظمات",
+    "organizations": "المنظمات",
     "properties": "العقارات",
     "reservations": "الحجوزات",
     "team": "المضيفون",

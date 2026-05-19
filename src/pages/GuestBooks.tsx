@@ -53,8 +53,8 @@ const GuestBooks = () => {
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const { data: prof } = await supabase.from("profiles").select("organization_id").eq("id", user.id).maybeSingle();
-      const oid = prof?.organization_id ?? null;
+      const { data: prof } = await supabase.from("profiles").select("org_id").eq("id", user.id).maybeSingle();
+      const oid = prof?.org_id ?? null;
       setOrgId(oid);
       if (oid) {
         const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", user.id).eq("organization_id", oid);
@@ -67,7 +67,7 @@ const GuestBooks = () => {
     if (!orgId) return;
     setLoading(true);
     const [propsRes, booksRes, orgRes] = await Promise.all([
-      supabase.from("properties").select("id, name, show_on_website, public_description, entry_instructions").eq("organization_id", orgId).order("name"),
+      supabase.from("properties").select("id, name, show_on_website, public_description, entry_instructions").eq("org_id", orgId).order("name"),
       supabase.from("guest_books").select("*").eq("organization_id", orgId).order("created_at", { ascending: false }),
       supabase.from("organizations").select("website_contact_phone, website_contact_email").eq("id", orgId).maybeSingle(),
     ]);

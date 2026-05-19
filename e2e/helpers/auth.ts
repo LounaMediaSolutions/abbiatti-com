@@ -1,7 +1,9 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 export const AUTH_BUTTON_RE =
   /se connecter|connexion|sign in|log in|login|continuer|continue/i;
+const LOGIN_ENTRY_BUTTON_RE =
+  /^(se connecter|connexion|sign in|log in|login|continuer|continue)$/i;
 
 export type LoginOptions = {
   entryPath?: "/auth" | "/staff-login";
@@ -16,6 +18,11 @@ type CredentialEnv = {
 export const adminCredentials: CredentialEnv = {
   email: process.env.E2E_ADMIN_EMAIL ?? "",
   password: process.env.E2E_ADMIN_PASSWORD ?? "",
+};
+
+export const superAdminCredentials: CredentialEnv = {
+  email: process.env.E2E_SUPER_ADMIN_EMAIL ?? "",
+  password: process.env.E2E_SUPER_ADMIN_PASSWORD ?? "",
 };
 
 export const cohostCredentials: CredentialEnv = {
@@ -101,16 +108,31 @@ export async function loginAs(
 export async function expectAuthenticatedShell(
   page: Page,
   email: string,
+  options?: {
+    requireEmail?: boolean;
+    readyLocator?: Locator;
+  },
 ) {
+  const requireEmail = options?.requireEmail ?? true;
+  const readyLocator =
+    options?.readyLocator ??
+    page.getByRole("button", {
+      name: /log out|logout|se déconnecter|déconnexion/i,
+    }).first();
+
   await expect(
-    page.getByRole("button", { name: /log out|logout|se déconnecter/i }).first(),
+    readyLocator,
   ).toBeVisible({
     timeout: 10_000,
   });
 
-  await expect(page.getByText(email, { exact: true }).first()).toBeVisible({
-    timeout: 10_000,
-  });
+  if (requireEmail) {
+    await expect(page.getByText(email, { exact: true }).first()).toBeVisible({
+      timeout: 10_000,
+    });
+  }
 
-  await expect(page.getByRole("button", { name: AUTH_BUTTON_RE })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: LOGIN_ENTRY_BUTTON_RE }),
+  ).toHaveCount(0);
 }

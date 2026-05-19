@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FileText, Download, Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,10 +9,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-
-const MONTHS_FR = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+import { useTranslation } from "react-i18next";
 
 const Reports = () => {
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [orgId, setOrgId] = useState<string | null>(null);
   const [orgName, setOrgName] = useState("");
@@ -22,16 +22,20 @@ const Reports = () => {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [generating, setGenerating] = useState(false);
+  const months = useMemo(
+    () => Array.from({ length: 12 }, (_, index) => new Intl.DateTimeFormat(i18n.language, { month: "long" }).format(new Date(2026, index, 1))),
+    [i18n.language],
+  );
 
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const { data: prof } = await supabase.from("profiles").select("organization_id").eq("id", user.id).maybeSingle();
-      if (!prof?.organization_id) return;
-      setOrgId(prof.organization_id);
-      const { data: o } = await supabase.from("organizations").select("name").eq("id", prof.organization_id).maybeSingle();
+      const { data: prof } = await supabase.from("profiles").select("org_id").eq("id", user.id).maybeSingle();
+      if (!prof?.org_id) return;
+      setOrgId(prof.org_id);
+      const { data: o } = await supabase.from("organizations").select("name").eq("id", prof.org_id).maybeSingle();
       setOrgName(o?.name || "");
-      const { data: p } = await supabase.from("properties").select("id, name").eq("organization_id", prof.organization_id).order("name");
+      const { data: p } = await supabase.from("properties").select("id, name").eq("org_id", prof.org_id).order("name");
       setProperties(p || []);
     })();
   }, [user]);
@@ -56,13 +60,13 @@ const Reports = () => {
       }, 0);
 
       const doc = new jsPDF();
-      const propLabel = propertyId === "all" ? "Tous les biens" : (properties.find((p) => p.id === propertyId)?.name || "");
+      const propLabel = propertyId === "all" ? t("reports.allProperties") : (properties.find((p) => p.id === propertyId)?.name || "");
 
       doc.setFontSize(20);
-      doc.text(orgName || "Rapport", 14, 18);
+      doc.text(orgName || t("reports.documentFallback"), 14, 18);
       doc.setFontSize(12);
       doc.setTextColor(100);
-      doc.text(`Rapport mensuel — ${MONTHS_FR[month]} ${year}`, 14, 26);
+      doc.text(`${t("reports.documentTitle")} — ${months[month]} ${year}`, 14, 26);
       doc.text(propLabel, 14, 32);
 
       // Summary box
@@ -71,9 +75,9 @@ const Reports = () => {
       doc.roundedRect(14, 40, 182, 24, 2, 2, "FD");
       doc.setTextColor(40);
       doc.setFontSize(10);
-      doc.text("Réservations", 20, 48);
-      doc.text("Nuits vendues", 80, 48);
-      doc.text("Revenu total", 140, 48);
+      doc.text(t("reports.summary.reservations"), 20, 48);
+      doc.text(t("reports.summary.nights"), 80, 48);
+      doc.text(t("reports.summary.revenue"), 140, 48);
       doc.setFontSize(16);
       doc.text(String(list.length), 20, 58);
       doc.text(String(nights), 80, 58);
@@ -82,7 +86,15 @@ const Reports = () => {
       // Table
       autoTable(doc, {
         startY: 72,
-        head: [["Bien", "Voyageur", "Arrivée", "Départ", "Nuits", "Source", "Montant"]],
+        head: [[
+          t("reports.columns.property"),
+          t("reports.columns.guest"),
+          t("reports.columns.checkIn"),
+          t("reports.columns.checkOut"),
+          t("reports.columns.nights"),
+          t("reports.columns.source"),
+          t("reports.columns.amount"),
+        ]],
         body: list.map((r: any) => {
           const n = Math.max(0, Math.round((new Date(r.check_out).getTime() - new Date(r.check_in).getTime()) / 86400000));
           return [
@@ -102,12 +114,12 @@ const Reports = () => {
       const finalY = (doc as any).lastAutoTable?.finalY || 72;
       doc.setFontSize(8);
       doc.setTextColor(120);
-      doc.text(`Généré le ${new Date().toLocaleString("fr-FR")} — Abbiatti`, 14, finalY + 12);
+      doc.text(`${t("reports.generatedOn")} ${new Date().toLocaleString(i18n.language)} — Abbiatti`, 14, finalY + 12);
 
-      doc.save(`rapport-${year}-${String(month + 1).padStart(2, "0")}-${propLabel.replace(/\s+/g, "-")}.pdf`);
-      toast.success("Rapport généré");
+      doc.save(`report-${year}-${String(month + 1).padStart(2, "0")}-${propLabel.replace(/\s+/g, "-")}.pdf`);
+      toast.success(t("reports.generated"));
     } catch (e: any) {
-      toast.error(e.message || "Erreur");
+      toast.error(e.message || t("common.error"));
     } finally {
       setGenerating(false);
     }
@@ -116,31 +128,31 @@ const Reports = () => {
   return (
     <div className="container mx-auto px-4 py-6 max-w-3xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold flex items-center gap-2"><FileText className="w-6 h-6 text-primary" /> Rapports mensuels</h1>
-        <p className="text-sm text-muted-foreground">Génère un PDF récapitulatif des réservations et revenus par mois et par bien.</p>
+        <h1 className="text-2xl font-bold flex items-center gap-2"><FileText className="w-6 h-6 text-primary" /> {t("reports.title")}</h1>
+        <p className="text-sm text-muted-foreground">{t("reports.subtitle")}</p>
       </div>
 
       <Card className="p-5 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
-            <Label>Bien</Label>
+            <Label>{t("reports.filters.property")}</Label>
             <Select value={propertyId} onValueChange={setPropertyId}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tous les biens</SelectItem>
+                <SelectItem value="all">{t("reports.allProperties")}</SelectItem>
                 {properties.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
           <div>
-            <Label>Mois</Label>
+            <Label>{t("reports.filters.month")}</Label>
             <Select value={String(month)} onValueChange={(v) => setMonth(+v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{MONTHS_FR.map((m, i) => <SelectItem key={i} value={String(i)}>{m}</SelectItem>)}</SelectContent>
+              <SelectContent>{months.map((m, i) => <SelectItem key={i} value={String(i)}>{m}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div>
-            <Label>Année</Label>
+            <Label>{t("reports.filters.year")}</Label>
             <Select value={String(year)} onValueChange={(v) => setYear(+v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -151,7 +163,7 @@ const Reports = () => {
         </div>
         <Button onClick={generate} disabled={generating} className="w-full">
           {generating ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Download className="w-4 h-4 mr-2" />}
-          Générer le PDF
+          {t("reports.generatePdf")}
         </Button>
       </Card>
     </div>

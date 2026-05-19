@@ -1,0 +1,847 @@
+# Escapar — Project Documentation
+
+_Last updated: 2026-05-16_
+
+This document describes the current, verified state of the codebase. Anything
+that the code _expects_ but the database does not provide is called out
+explicitly under "Known gaps" so contributors don't waste time tracing
+ghost tables.
+
+---
+
+## 1. Product overview
+
+Escapar is a vacation-rental property management SaaS. It serves three
+audiences from a single React app:
+
+1. **Internal team** (super-admin, admin/co_admin, cohost) — manages
+   organizations, properties, bookings, tasks, staff.
+2. **Field staff** (cleaner, driver, decorator, maintenance, staff) — a
+   stripped-down task agenda on mobile.
+3. **Guests** (public URLs at `/g/:slug`, `/s/:slug`, etc.) — view
+   property info, services, coupons. No login required for most public
+   guest pages.
+
+The repository is named `abbiatti-com` for historical reasons and the
+production URL is currently `abbiatti-com.vercel.app`. The product brand
+is "Escapar", with a long-term plan to move to `escapar.net`.
+
+---
+
+## 2. Tech stack
+
+| Layer | Choice |
+|---|---|
+| UI framework | React 18 + TypeScript |
+| Bundler / dev server | Vite 5 (`@vitejs/plugin-react-swc`) |
+| Styling | TailwindCSS 3 + shadcn/ui (Radix primitives) |
+| Routing | `react-router-dom` v6 |
+| Server state | `@tanstack/react-query` v5 |
+| Forms | `react-hook-form` + `zod` |
+| Backend | Supabase (Postgres, Auth, Storage, RLS) |
+| i18n | `i18next` + `react-i18next` (FR / EN / AR) |
+| QR codes | `qrcode.react` + `@yudiel/react-qr-scanner` |
+| Tests | Vitest (unit), Playwright (E2E in `e2e/`) |
+| Desktop wrap | Electron 41 (loads `dist/index.html` via `electron/main.cjs`) |
+| Hosting | Vercel (SPA rewrites in `vercel.json`) |
+
+The Supabase project id used in `src/integrations/supabase/client.ts` is
+`pqaxxhateycrklzlnhkc.supabase.co` and the publishable key is hard-coded
+in that file. There is currently no `.env.local` with `VITE_SUPABASE_*`
+variables — the client is wired in directly. The root `.env` only holds
+Playwright E2E credentials, not runtime config.
+
+---
+
+## 3. Repository layout
+
+```
+abbiatti-com/
+├── src/
+│   ├── App.tsx                  Routes + providers
+│   ├── main.tsx                 Vite entry
+│   ├── pages/                   One file per route
+│   ├── components/              UI components (incl. shadcn/ui in components/ui)
+│   ├── contexts/AuthContext.tsx Supabase session state
+│   ├── hooks/                   useCohostKpis, use-mobile, use-toast
+│   ├── integrations/supabase/   client.ts + auto-generated types.ts
+│   ├── lib/                     access.ts, authRedirect.ts, billing.ts, …
+│   ├── i18n/                    Translation files
+│   └── assets/                  Logos, static images
+├── supabase/migrations/         56+ SQL migration files (chronological)
+├── e2e/                         Playwright specs
+├── electron/main.cjs            Desktop shell
+├── public/                      Static files served as-is
+├── playwright.config.ts
+├── vite.config.ts
+├── tailwind.config.ts
+├── vercel.json                  SPA fallback to /
+└── CLAUDE.md                    AI-assistant guidance (rules + role map)
+```
+
+Root-level SQL files (`fix_user_roles.sql`, `restore_profiles_from_auth.sql`,
+`restore_super_admin.sql`) are one-off **recovery scripts** run manually
+in the Supabase SQL editor. They are NOT auto-applied by
+`supabase db push` and are not part of the migration history.
+
+---
+
+## 4. Authentication and role model
+
+### 4.1 The seven roles
+
+`profiles.role` is a free-form `text` column. The values used by the app
+are enumerated in `src/lib/access.ts`:
+
+| Role | Bucket | Default landing route |
+|---|---|---|
+| `super_admin` | global admin | `/super-admin` |
+| `admin` | org admin | `/admin/dashboard` |
+| `co_admin` | org admin | `/admin/dashboard` |
+| `cohost` | property-scoped manager | `/cohost/dashboard` |
+| `cleaner` | field staff | `/employee` |
+| `driver` | field staff | `/employee` |
+| `decorator` | field staff | `/employee` |
+| `maintenance` | field staff | `/employee` |
+| `staff` | field staff | `/employee` |
+| `guest` | external | `/guest` (forced redirect inside `AppLayout`) |
+
+Helper sets exported from `access.ts`:
+- `ADMIN_ROLES = ['super_admin', 'admin', 'co_admin']`
+- `ORG_ADMIN_ROLES = ['admin', 'co_admin']`
+- `EMPLOYEE_ROLES = ['cleaner', 'driver', 'decorator', 'maintenance', 'staff']`
+
+Role detection has a small piece of inferred logic: a profile whose role
+is something else but who has _at least one row in `property_cohosts`_ is
+treated as a cohost for routing purposes (`getDashboardPathForRole`).
+
+### 4.2 How a login becomes a dashboard
+
+The route layer is intentionally simple — `ProtectedRoute` only checks
+"is there a Supabase session?". It does **not** check roles. Role gating
+happens inside the page or layout:
+
+1. User logs in via `/auth` or `/staff-login` (QR / phone-based flow).
+2. `AuthContext` writes the session into React state.
+3. The user is routed to `/` (or whatever was stored in `postLoginRedirect`).
+4. `src/pages/Home.tsx` calls `getUserAccess(user.id)` and
+   `<Navigate>`s to the correct dashboard based on `profiles.role`.
+5. Pages that only some roles may use (e.g. `SuperAdmin.tsx`) call
+   `isSuperAdminUser()` themselves and render `<Unauthorized />`
+   otherwise.
+
+`AppLayout` reloads `getUserAccess` separately to decide which nav items
+to show. Profiles with `role = 'guest'` are force-redirected to `/guest`.
+
+### 4.3 Redirect handling
+
+`src/lib/authRedirect.ts` implements a small state machine for
+post-login redirects. It supports query strings (`?redirect=…`), router
+state, and a TTL'd `sessionStorage` slot (10 minutes). It normalises and
+same-origin-checks anything it reads. There's a debug flag at
+`localStorage["debug:authRedirect"]`.
+
+### 4.4 Per-role capability breakdown
+
+The deep reference for each role — what they can **view**, **access**,
+and **do** — lives in a dedicated companion file:
+
+> **See [`roles.md`](./roles.md)** for the full per-role breakdown of
+> super-admin, admin, co-admin, co-host, employee (cleaner / driver /
+> decorator / maintenance / staff), and guest, plus a capability matrix.
+
+The rest of this section retained for context. Where a feature is
+broken because its underlying table is missing (§6.2) or because role
+gating is incomplete (§4.2), that is called out in `roles.md` as well.
+
+> **Caveat.** Because `ProtectedRoute` does not check roles, a logged-in
+> user typing the URL of a page they shouldn't see will still render
+> it. The only true enforcement today is (a) the sidebar's per-role nav,
+> (b) the `Home.tsx` dispatcher, (c) the explicit `isSuperAdminUser`
+> check on `/super-admin/*` and `/anomalies`, and (d) Supabase RLS.
+> Anything below describes the *intended* permission model the UI is
+> designed around.
+
+#### 4.4.1 Super-admin (`role = 'super_admin'`)
+
+Platform operator. One per Escapar deployment, not per agency. Unrestricted
+cross-organisation access.
+
+**Routes / sidebar.** Super-admin nav: Organisations, Profils, Properties,
+Availability, Reservations, Tasks, Reports, Settings. Plus the entire admin
+sidebar (super-admins inherit manager pages). Super-admin-only routes:
+
+- `/super-admin` — list of every organisation on the platform.
+- `/super-admin/orgs/:id` — single-org deep dive.
+- `/super-admin/billing` — per-org pricing and invoices.
+- `/super-admin/profiles` — every profile across every org.
+- `/super-admin/staff` — internal platform staff (technician, developer,
+  accountant, support, super_admin).
+
+These five pages are the only ones with a server-checked role guard
+(`isSuperAdminUser()` falling back to a `user_roles` query). Everything
+else renders `<Unauthorized />` for non-super-admins.
+
+**What they can view.** Every `organizations` row with status, trial
+expiry, plan limits, and stat cards (total orgs, active, suspended).
+For a single org: counts of admins, cohosts, employees, properties;
+pending invitations; pricing config; full invoice history. Every
+profile and every internal staff member across the platform.
+
+**What they can do.**
+
+- Create / edit / suspend / reactivate / delete an organisation
+  (inserts and updates on `organizations`).
+- Invite an admin into any org via the `create-team-member` edge
+  function.
+- Extend trials with `+7d` / `+30d` buttons (`trial_ends_at`).
+- Configure pricing per org: `price_monthly_base`, `price_per_admin`,
+  `price_per_cohost`, `price_per_employee`, `price_per_message`,
+  `price_per_ical_sync`, `price_per_mb_storage`, `billing_currency`.
+- Generate invoices via `computeUsageForOrg` → insert into `invoices`;
+  download PDF, mark sent, mark paid, or delete each invoice.
+- Cancel pending invitations (sets `profiles.invitation_status` to
+  null).
+- Assign any role to any profile (including promoting a profile to
+  super_admin) via `SuperAdminProfiles`.
+- Create platform-level internal staff via `SuperAdminStaff`.
+- Everything an admin can do, scoped to any org.
+
+**What they cannot do.** No functional restrictions in code; RLS
+policies for super-admin generally bypass tenant matching via
+`is_super_admin()`.
+
+#### 4.4.2 Admin / Co-admin (`role = 'admin' | 'co_admin'`)
+
+The agency owner or senior manager. Sees everything inside their own
+organisation and nothing outside it. `admin` and `co_admin` are nearly
+identical; differences are noted inline.
+
+**Routes / sidebar.** Manager nav: Dashboard, Properties, Availability,
+Reservations, Tasks, Reports, Team, Settings. Additional routes
+reachable by URL or contextual links: `/inventory`, `/rentals`,
+`/guest-books`, `/tickets`, `/anomalies`, `/showcase` (booking
+requests), `/invoices`, `/cohosts/:id`.
+
+Cannot access `/super-admin/*` — those routes render
+`<Unauthorized />`.
+
+**What they can view.**
+
+- **Dashboard** — KPI cards scoped to their `org_id`: total properties,
+  total team, total tasks. Includes the `WhatsAppReminders` panel
+  (builds `wa.me` deeplinks; no real WhatsApp API).
+- **Properties** — every property in their org with all private fields
+  (`access_code`, `entry_instructions`). iCal sources, approval
+  timeline, QR code.
+- **Reservations / Availability** — full reservation list and calendar
+  for the org.
+- **Tasks** — every task in the org regardless of assignee.
+- **Team** — every team member with role and assignment info, plus
+  inline cohost KPIs.
+- **Tickets** — every `maintenance_tickets` row filterable by status.
+- **Anomalies** — overdue tasks, open tickets, unanswered messages,
+  missed cleanings, reservation conflicts.
+- **Reports** — generate PDFs filterable by year / month / property.
+- **Invoices** — their org's own invoices owed to the platform
+  (read-only, downloadable as PDF).
+
+**What they can do.**
+
+- Full CRUD on `properties`, `tasks`, `bookings/reservations`,
+  `rental_items`, `items` (inventory), `guest_books`.
+- Update `maintenance_tickets` status across new → in_progress →
+  resolved → closed.
+- Process booking requests from the public showcase.
+- Invite team members via `create-team-member`:
+  - **Admins** can invite: co_admin, cohost, cleaner, driver, decorator,
+    maintenance.
+  - **Co-admins** can invite: cohost, cleaner, driver, decorator,
+    maintenance — **but not other co-admins or admins.**
+- Promote or demote members within their tier (admins can edit anyone
+  below them; co-admins cannot edit other co-admins).
+- Generate and send WhatsApp template messages (deeplink-only).
+- Generate PDF reports.
+- Edit own profile, org settings, partner integrations, photo albums.
+
+**What they cannot do.**
+
+- Access any `/super-admin/*` route.
+- Edit the super_admin role on any profile.
+- See another organisation's data (queries are `org_id`-filtered and
+  RLS-backed).
+- Actually *send* WhatsApp messages — only deeplinks are built.
+
+#### 4.4.3 Co-host (`role = 'cohost'`, or any profile with `property_cohosts` rows)
+
+A property manager assigned to a subset of an organisation's
+properties via `property_cohosts`. Sees only the properties they are
+linked to and the data attached to those properties.
+
+**Routes / sidebar.** Cohost nav: Dashboard, Properties, Availability,
+Reservations, Tasks, Team, Rentals, Livrets (guest books), Signalements
+(tickets). Notably **missing** from the cohost sidebar: Reports,
+Settings, Anomalies, Inventory.
+
+**Permission model.** Each `property_cohosts` row carries a
+`permissions text[]` column. The tokens currently in use are
+`manage_properties`, `manage_reservations`, `manage_tasks`,
+`manage_staff`, `view_financials`, `manage_settings`. A cohost only
+gets the actions explicitly granted on each property. Helpers:
+`getPropertyPermissions(userId, propertyId)` and
+`hasPropertyPermission(userId, propertyId, permission)` in
+`access.ts`.
+
+**What they can view.**
+
+- **Dashboard** — KPI cards scoped to *their* assigned properties:
+  number of assigned properties, total tasks across those properties,
+  and distinct team members in `property_cohosts` for the same
+  properties.
+- **Properties** — only their assigned properties. Uses the
+  "without-private-fields" select; sensitive fields like `access_code`
+  may be hidden by RLS.
+- **Reservations / Availability / Tasks** — limited to their
+  properties.
+- **Team** — visibility into the cohosts and employees who share their
+  properties.
+- **Rentals / Livrets / Signalements** — for their properties only.
+
+**What they can do.** Subject to the per-property `permissions[]`:
+
+- View and update property details.
+- Create, update, and cancel reservations.
+- Create, assign, and update tasks.
+- Update guest books and `maintenance_tickets` for their properties.
+- View their own KPI deep-dive (`/cohosts/:id`).
+
+**What they cannot do.**
+
+- Access `/super-admin/*` or `/anomalies` (admin-only).
+- See pages absent from their sidebar (Reports, Settings, Inventory)
+  without typing the URL — and RLS should empty them.
+- Manage org-wide team roles — `Team.tsx` gives cohosts no editable
+  roles. They can view but not promote or demote.
+- See properties they are not assigned to.
+- See financial data unless `view_financials` is in their per-property
+  permissions.
+- Extend trials, edit org settings, configure pricing, manage invoices.
+
+#### 4.4.4 Employee — cleaner / driver / decorator / maintenance / staff
+
+Field workers. All five employee roles share the **exact same UI** —
+the role string is used to categorise team members and filter task
+assignments, not to gate features.
+
+**Routes / sidebar.** Staff nav (entire surface area):
+Mon agenda, Signalements, Help, Settings. `/employee` and `/` redirect
+to `MyAgenda` automatically.
+
+**What they can view.**
+
+- **My Agenda** (`src/pages/MyAgenda.tsx`) — the only operational page.
+  Queries `tasks` filtered by `assigned_to = user.id` and
+  `status != 'done'`, ordered by `due_at`. Tasks are grouped by Today /
+  Tomorrow / future / undated, each with a type icon. Property name
+  hydrated from `properties` for tasks with a `property_id`.
+- **Signalements** — `/tickets` is reachable from the sidebar; RLS
+  controls what they actually see.
+- **Settings** — own profile only.
+- **Help** — static help page.
+
+The UI is intentionally simple per CLAUDE.md: big buttons, photo
+uploads, voice recording. No dense tables.
+
+**What they can do.**
+
+- **Start a task** — sets status to `in_progress`, writes
+  `started_at`.
+- **Complete a task** — sets status to `done`, writes
+  `completed_at`.
+- **QR check-in** — `QRCheckInScanner` for `todo` tasks tied to a
+  `property_id`.
+- **Upload photos** for tasks (mobile-friendly upload to `task_photos`
+  storage).
+- **Update their own profile.**
+
+**What they cannot do.**
+
+- Create or assign tasks — only managers can.
+- See other employees' tasks.
+- View properties, reservations, the team list, reports, inventory,
+  anomalies, or any admin/cohost page — those routes don't appear in
+  their sidebar, and RLS should return empty results if hit directly.
+- Change task status arbitrarily — only the `todo → in_progress →
+  done` flow is exposed.
+- Manage anyone — no Team page in their sidebar.
+
+#### 4.4.5 Guest (`role = 'guest'`)
+
+End-customer staying at a property. Authenticated separately and
+routed to a dedicated portal that never shows the main app sidebar.
+`AppLayout` auto-redirects any profile with `role = 'guest'` to
+`/guest` with `replace: true`.
+
+**Routes.**
+
+- `/guest` — the guest portal for the currently logged-in guest.
+- `/guest-preview/:reservationId` — same UI in preview mode for staff
+  QA (admin / cohost only).
+- Public, unauthenticated routes also accessible to anyone:
+  - `/g/:slug` — printable guest book.
+  - `/s/:slug` — public reservation page.
+  - `/r/:slug` — issue-reporting form.
+  - `/v/:orgId` — agency public showcase.
+  - `/redeem/:code` — coupon redemption.
+
+**What they can view.** `GuestPortal.tsx` re-checks the guest role via
+`user_roles`, then loads:
+
+- Their `guest_accounts` record (linked to a property and a
+  reservation).
+- Property details and the active `guest_books` entry for that
+  property.
+- Partner services (`partner_services` filtered to `active=true` and
+  `visible_to_guest=true`, sorted gold → silver → standard).
+- Rental items (`rental_items` filtered to `active=true`).
+- Their own message thread with the host.
+- Their own photo uploads.
+- Coupons they hold.
+- An `AdBanner` placement.
+
+Typical tabs: Wi-Fi, key access, messages, photos (camera), partners,
+rentals, coupons.
+
+**What they can do.**
+
+- Post messages to the host.
+- Upload photos with comments.
+- Browse partner services offered for their property.
+- Browse rental items they can request.
+- Redeem coupons.
+- Sign out.
+
+**What they cannot do.**
+
+- See any property or reservation other than their own.
+- View tasks, the team, or any operational data.
+- Access the main app sidebar or any admin / cohost / employee page —
+  the auto-redirect on every navigation prevents it.
+
+#### 4.4.6 Capability matrix — quick lookup
+
+| Capability | Super-admin | Admin | Co-admin | Co-host | Employee | Guest |
+|---|---|---|---|---|---|---|
+| Manage organisations (CRUD) | yes | no | no | no | no | no |
+| Configure org pricing & invoices | yes | no | no | no | no | no |
+| Suspend / reactivate orgs | yes | no | no | no | no | no |
+| Invite admins | yes | yes | no | no | no | no |
+| Invite cohosts | yes | yes | yes | no | no | no |
+| Invite employees | yes | yes | yes | no | no | no |
+| CRUD properties | yes | yes (own org) | yes (own org) | yes (assigned + permitted) | no | no |
+| CRUD reservations / bookings | yes | yes (own org) | yes (own org) | yes (assigned) | no | no |
+| CRUD tasks | yes | yes (own org) | yes (own org) | yes (assigned) | update own only | no |
+| Generate PDF reports | yes | yes | yes | no | no | no |
+| View anomalies dashboard | yes | yes | yes | no | no | no |
+| Manage inventory | yes | yes | yes | no | no | no |
+| Manage guest books | yes | yes | yes | yes (assigned) | no | no |
+| View own agenda | n/a | n/a | n/a | n/a | yes | n/a |
+| Use guest portal | no | preview only | preview only | no | no | yes |
+
+---
+
+## 5. Routing map
+
+All routes live in `src/App.tsx`. Three categories:
+
+### 5.1 Public
+
+| Path | Page | Purpose |
+|---|---|---|
+| `/welcome` | `Welcome` | Marketing / landing |
+| `/auth` | `Auth` | Email + password login & signup |
+| `/staff-login` | `StaffLogin` | QR / phone-only login for field staff |
+| `/reset-password` | `ResetPassword` | Password reset |
+| `/g/:slug` | `GuestBook` | Guest property page |
+| `/s/:slug` | `GuestReservation` | Guest reservation page |
+| `/r/:slug` | `ReportIssue` | Guest issue reporting |
+| `/v/:orgId` | `Showcase` | Public org showcase |
+| `/redeem/:code` | `RedeemCoupon` | Coupon redemption |
+
+### 5.2 Authenticated (any logged-in user)
+
+| Path | Page |
+|---|---|
+| `/` | `Home` (dispatches based on role) |
+| `/admin/dashboard` | `Home` → `Dashboard` |
+| `/cohost/dashboard` | `Home` → `Dashboard` |
+| `/employee` | `Home` → `MyAgenda` |
+| `/guest`, `/guest-preview/:reservationId` | `GuestPortal` |
+| `/properties` | `Properties` |
+| `/team`, `/cohosts/:id` | `Team`, `CohostDetail` |
+| `/anomalies` | `Anomalies` |
+| `/reservations` | `Reservations` |
+| `/tasks` | `Tasks` |
+| `/inventory` | `Inventory` |
+| `/availability` | `Availability` |
+| `/rentals` | `Rentals` |
+| `/settings` | `Settings` |
+| `/guest-books`, `/tickets`, `/showcase` (BookingRequests), `/reports`, `/help` | misc |
+| `/invoices` | `MyInvoices` |
+
+### 5.3 Super-admin only
+
+| Path | Page |
+|---|---|
+| `/super-admin` | `SuperAdmin` (list of organizations) |
+| `/super-admin/orgs/:id` | `SuperAdminOrg` |
+| `/super-admin/billing` | `SuperAdminBilling` |
+| `/super-admin/profiles` | `SuperAdminProfiles` |
+| `/super-admin/staff` | `SuperAdminStaff` |
+
+`/super-admin/*` routes are mounted as `ProtectedRoute` only — they rely
+on each page running its own `isSuperAdminUser()` check and rendering
+`<Unauthorized />` for non-super-admins.
+
+### 5.4 Application modules
+
+The same routes seen through a product lens. Five user-facing modules,
+each backed by one or more pages in §5.1-5.3.
+
+1. **Super-Admin Console** (`/super-admin/*`)
+   _Audience: Escapar staff (`role = 'super_admin'`)._
+   Cross-tenant control plane. Lists every organization (`SuperAdmin`),
+   drills into a single org (`SuperAdminOrg`), manages billing
+   (`SuperAdminBilling`), inspects every profile across tenants
+   (`SuperAdminProfiles`), and reviews staff (`SuperAdminStaff`).
+   Backed by `organizations`, `profiles`, `subscriptions`, `invoices`.
+   Only role that can satisfy RLS via `is_super_admin()` — bypasses
+   `org_id` matching everywhere.
+   _Status: mostly working — see §8 for the field-name mismatches in
+   `SuperAdmin.tsx`._
+
+2. **Admin Dashboard** (`/admin/dashboard`, `/properties`, `/team`,
+   `/reservations`, `/tasks`, `/reports`, `/settings`, …)
+   _Audience: org owners (`role = 'admin' | 'co_admin'`)._
+   Full management surface scoped to the user's `org_id`. Property
+   CRUD, booking management, task assignment, team / cohost
+   management, org branding and billing. The same routes are shared
+   with cohosts — page-level filtering does the scoping.
+   _Status: working for the core CRUD; pages that depend on missing
+   tables (Anomalies, Inventory, Tickets, BookingRequests) are
+   broken._
+
+3. **Cohost Dashboard** (`/cohost/dashboard` plus the shared admin
+   routes)
+   _Audience: `role = 'cohost'`, or any user with at least one
+   `property_cohosts` row._
+   Same UI shell as the admin dashboard, but data is filtered to
+   properties the user is assigned to. Permission tokens on
+   `property_cohosts.permissions` (`manage_properties`,
+   `manage_reservations`, `manage_tasks`, `manage_staff`,
+   `view_financials`, `manage_settings`) decide what each cohost can
+   do on a given property.
+   _Status: scoping works; granular per-permission gating is partial._
+
+4. **Employee Agenda** (`/employee`)
+   _Audience: field staff (`cleaner`, `driver`, `decorator`,
+   `maintenance`, `staff`)._
+   Deliberately simple `MyAgenda` page: big buttons, today/tomorrow
+   task list, photo upload, voice recording. Reads `tasks` filtered
+   by `assigned_to = auth.uid()`. Login via `/staff-login` supports
+   QR-code / phone-only flows.
+   _Status: the most stable surface of the app._
+
+5. **Guest Pages** (`/g/:slug`, `/s/:slug`, `/r/:slug`, `/v/:orgId`,
+   `/redeem/:code`, plus authenticated `/guest`)
+   _Audience: end guests staying at a property. Mostly unauthenticated._
+   Property info, reservation details, services / rentals to book,
+   coupon redemption, issue reporting, public org showcase.
+   _Status: mostly broken — depends on `guest_books`, `guest_albums`,
+   `guest_uploads`, `guest_messages`, `reservations`,
+   `partner_coupons`, `partner_services` — none of which exist in
+   the live DB. Listed in §6.2._
+
+A Marketplace and Partner Portal are planned (see §13) but not
+implemented; no routes are reserved for them yet.
+
+---
+
+## 6. Database schema (live deployment)
+
+The source of truth for "what tables actually exist in production" is
+`src/integrations/supabase/types.ts` — it is auto-generated from the
+running Supabase project.
+
+### 6.1 Tables present
+
+| Table | Purpose |
+|---|---|
+| `profiles` | Per-user row keyed on `auth.users.id`. Holds `role`, `org_id`, `active`, `email`, `full_name`, `phone`, `whatsapp`, `language`, `avatar_url`. The migration `20260516120000` also adds invitation fields (`pending_org_id`, `pending_role`, `invited_by`, `invitation_status`) — these are referenced by RLS policies but may not yet appear in `types.ts` if it hasn't been regenerated since that migration ran. |
+| `organizations` | Tenant root. Branding (`logo_url`, `primary_color`, `secondary_color`, `brand_name`), plan (`plan`, `subscription_status`, `trial_ends_at`, `next_billing_date`), quotas (`max_properties`, `max_employees`), defaults (`default_currency`, `default_language`), `owner_id`, `slug`, `active`. |
+| `properties` | Belongs to an org via `org_id`. Address, capacity, pricing fields, channel URLs (`airbnb_url`, `booking_url`, `vrbo_url`, `expedia_url`), `amenities` (JSON), `cover_image_url`, `active`. |
+| `property_cohosts` | Many-to-many between `profiles` and `properties`. `permissions text[]` per assignment, plus `assigned_at` / `assigned_by`. |
+| `bookings` | Belongs to org + property. Customer fields, `checkin`, `checkout`, `nights`, channel info (`channel_slug`, `channel_ref`), pricing breakdown (`nightly_rate`, `accommodation_total`, `cleaning_fee`, `services_total`, `rental_items_total`, `discount_pct`, `grand_total`), `services JSON`, `rental_items JSON`, `status`, `payment_status`, `payment_method`, `ref_number`, optional `cohost_id`. |
+| `booking_channels` | Lookup for booking sources (Airbnb, Booking.com, direct, etc.). `slug`, `name`, `icon`, `color`, `default_commission_pct`, `default_payout_delay_days`, `active`. |
+| `tasks` | Belongs to org, optionally to a property and booking. `task_type` (e.g. `cleaning`, `maintenance`), `status`, `priority`, `scheduled_date`, `scheduled_time`, `assigned_to`, `assigned_by`, `completed_at`, `completed_photo_url`, `ref_number`. |
+| `services` | Per-org service catalog (welcome basket, transfers, etc.). `category`, `price`, `currency`, `commission_pct`, `duration_hours`, optional external provider. |
+| `rental_items` | Per-org rentable items (baby beds, beach packs). `daily_price`, `weekly_price`, `deposit`, `stock_quantity`, `category`, `icon`, `image_url`. |
+| `subscriptions` | Billing rows per org. `plan`, `status`, `billing_cycle`, `amount`, `currency`, `stripe_subscription_id`, `starts_at`, `ends_at`. |
+| `invoices` | Invoice records. `invoice_number`, `amount`, `currency`, `status`, `due_date`, `paid_at`, `pdf_url`. |
+| `audit_log` | Generic event log. `action`, `resource_type`, `resource_id`, `user_id`, `user_name`, `user_role`, `org_id`, `details JSON`. |
+
+Plus two views: `bookings_with_property` and `tasks_with_property` —
+denormalised joins used to avoid N+1 in lists.
+
+### 6.2 Tables the code references but the live DB does NOT have
+
+The codebase still calls `.from(…)` on the following tables, but they
+are absent from the current `types.ts` (so any such query returns an
+error / empty result):
+
+`ad_banners`, `ad_impressions`, `booking_requests`, `cleaning_checklists`,
+`coupon_redemptions`, `guest_accounts`, `guest_albums`, `guest_books`,
+`guest_messages`, `guest_uploads`, `inventory_items`, `inventory_movements`,
+`maintenance_tickets`, `message_templates`, `notifications`,
+`partner_coupons`, `partner_services`, `property_approval_events`,
+`property_ical_feeds`, `property_members`, `public_properties`,
+`reservation_rentals`, `reservations`, `task_photos`, `user_roles`.
+
+This is the single most important thing for a new contributor to
+internalise. Migrations from early May created many of these tables and
+later migrations dropped them; the UI never caught up. Pages like
+`GuestBooks`, `Tickets`, `Inventory`, `Anomalies`, and `BookingRequests`
+will throw or render empty until either (a) the matching tables come
+back as migrations, or (b) the pages are rewritten/removed.
+
+### 6.3 Migrations
+
+Migrations live in `supabase/migrations/` and follow the standard
+Supabase naming (`<UTC-timestamp>_<slug>.sql`). They are applied with
+`supabase db push` and tracked in
+`supabase_migrations.schema_migrations` on the remote DB. Migrations
+should never be edited after they ship — write a new one on top.
+
+A recent cluster worth knowing about:
+
+- `20260514130000_is_super_admin_uses_profiles_role.sql` — moves
+  `is_super_admin()` off the legacy `user_roles` table and onto
+  `profiles.role`.
+- `20260515160000_has_role_uses_profiles_role.sql` — same change for
+  the generic `has_role()` function.
+- `20260516120000_fix_rls_for_super_admin_inserts.sql` — rewrites RLS
+  policies on `tasks` and `properties` to use the actual column name
+  `org_id` (older policies wrote `organization_id`, which evaluated
+  to NULL).
+- `20260516130000_restrict_profiles_visibility.sql` — tightens
+  read access on `profiles`.
+
+### 6.4 Row Level Security model
+
+All real tables enable RLS. The recurring pattern (post-2026-05-16) is:
+
+- `is_super_admin(auth.uid())` → unconditional access.
+- Otherwise, match `org_id` against the caller's `profiles.org_id` _or_
+  `profiles.pending_org_id` for invited-but-not-confirmed users.
+- For `properties`, also allow cohosts who appear in
+  `property_cohosts` for that property.
+- For `tasks`, additionally allow the assignee
+  (`assigned_to = auth.uid()`).
+- INSERT / UPDATE / DELETE on org-scoped tables additionally require
+  `profiles.role IN ('admin', 'co_admin', 'cohost', 'super_admin')`.
+
+`is_super_admin()` now reads from `profiles.role`. The deployment has no
+`user_roles` table — references to it in the application code
+(`access.ts → isSuperAdminUser`) and in some older migrations are
+defensive fallbacks and will silently no-op.
+
+---
+
+## 7. Access control helpers (`src/lib/access.ts`)
+
+Every page that needs role-aware behaviour goes through this module
+rather than reading `profiles.role` ad hoc.
+
+```ts
+import { getUserAccess } from "@/lib/access";
+
+const access = await getUserAccess(user.id);
+// → {
+//   orgId, role, dashboardPath,
+//   isSuperAdmin, isAdmin, isCohost,
+//   isManager  // admin OR cohost (incl. property_cohosts assignment)
+//   isStaff    // strictly not a manager
+// }
+```
+
+Lower-level helpers:
+
+- `isAdminRole(role)`, `isSuperAdminRole(role)`, `isOrgAdminRole(role)`,
+  `isEmployeeRole(role)` — predicates over a string role.
+- `getDashboardPathForRole(role, hasCohostAssignments)` — used both at
+  login dispatch and inside `AppLayout` to compute the dashboard link.
+- `isGlobalAdmin(userId)` / `isSuperAdminUser(userId)` — single-call
+  checks. `isSuperAdminUser` also queries `user_roles` for back-compat
+  (returns false if the table is missing).
+- `getPropertyPermissions(userId, propertyId)` — returns the
+  `permissions text[]` granted via `property_cohosts`, or the full
+  manager permission set for global admins.
+- `hasPropertyPermission(userId, propertyId, permission)` — sugar over
+  the above.
+
+The currently used permission tokens are:
+`manage_properties`, `manage_reservations`, `manage_tasks`,
+`manage_staff`, `view_financials`, `manage_settings`.
+
+---
+
+## 8. Page-by-page status
+
+This is the realistic state — what renders today vs what depends on
+missing schema.
+
+| Page | Works? | Notes |
+|---|---|---|
+| `Welcome`, `Auth`, `StaffLogin`, `ResetPassword` | yes | Supabase Auth flow is wired and tested. |
+| `Home` | yes | Role dispatch routes correctly per `getUserAccess`. |
+| `Dashboard` (admin / cohost) | partial | Reads `properties`, `profiles`, `tasks`, `property_cohosts` — all real. Some KPI cards may show 0 if no data exists. |
+| `MyAgenda` (employee) | yes | Reads `tasks` filtered by `assigned_to`. The simple, working UI. |
+| `Properties` | yes | CRUD against `properties`. |
+| `Reservations` | yes | Reads `bookings` (renamed from `reservations`). Some legacy code paths may still reference `reservations` — see §6.2. |
+| `Tasks` | yes | CRUD against `tasks`. |
+| `Team`, `CohostDetail` | yes | Operates over `profiles` + `property_cohosts`. |
+| `Settings` | partial | Org branding works (`organizations`); other tabs may rely on missing tables. |
+| `SuperAdmin*` | mostly | The whole `/super-admin/*` cluster works against `organizations`, `profiles`, `subscriptions`, `invoices`. Note: `SuperAdmin.tsx` declares an in-file `Org` type with fields `brand_color`, `max_cohosts`, `suspended` that don't match the live schema (`primary_color`, `max_employees`, `active`) — those bindings will be `undefined` until the page is updated. |
+| `GuestBook` (`/g/:slug`) | broken | References `guest_books`, `guest_albums`, `guest_uploads`, `guest_messages`. None exist. |
+| `GuestReservation`, `GuestPortal`, `ReportIssue` | broken/partial | Depend on guest tables and `reservations`. |
+| `Anomalies`, `Inventory`, `Tickets`, `BookingRequests`, `GuestBooks`, `Rentals`, `Availability` | broken/empty | All reference tables that don't exist in the deployment (`maintenance_tickets`, `inventory_items`, `booking_requests`, `property_ical_feeds`, etc.). |
+| `Reports`, `MyInvoices` | partial | Invoices work via `invoices` table; non-invoice reports likely empty. |
+| `Showcase` (`/v/:orgId`), `RedeemCoupon` | broken | Depend on missing public/coupon tables. |
+
+The supported "happy path" today is: super-admin manages orgs → admin
+manages properties / bookings / tasks → field staff sees `MyAgenda`.
+Everything else is partially wired.
+
+---
+
+## 9. Internationalisation
+
+Three languages: French (default), English, Arabic. Switcher in
+`LanguageSwitcher.tsx`. `i18next-browser-languagedetector` picks an
+initial language; the user's stored `profiles.language` overrides it at
+login (see `AppLayout`). RTL is not currently themed beyond the
+language switch.
+
+---
+
+## 10. Developer setup
+
+```bash
+# 1. Install
+npm install              # or bun install — lockfile present for both
+
+# 2. Run
+npm run dev              # Vite at http://localhost:8080
+
+# 3. Tests
+npm test                 # Vitest unit tests
+npm run lint             # ESLint
+
+# 4. E2E (Playwright)
+#    Fill in .env first — see §10.1
+npx playwright install   # first time only
+npx playwright test
+```
+
+### 10.1 Environment variables
+
+| Var | Where | Purpose |
+|---|---|---|
+| `VITE_DEBUG_AUTH_REDIRECT` | optional | Forces auth-redirect debug logging on. |
+| `E2E_BASE_URL` | `.env` | Base URL for Playwright runs. |
+| `E2E_{SUPER_ADMIN,ADMIN,COHOST,STAFF}_{EMAIL,PASSWORD}` | `.env` | Per-role logins used by `e2e/login-role-redirect.spec.ts`. |
+
+Supabase URL + anon key are **not** environment variables today —
+they're hard-coded in `src/integrations/supabase/client.ts`. If you
+move them to env, update both the client file and `types.ts` import.
+
+### 10.2 Working with the database
+
+The Supabase project is named `escapar` (id `pqaxxhateycrklzlnhkc`).
+Two common workflows:
+
+1. **Schema change** → write a new migration under `supabase/migrations/`,
+   run `supabase db push`. Never edit older files.
+2. **Data fix / recovery** → write a script in the project root (see
+   `restore_profiles_from_auth.sql` for the pattern). Run it once in the
+   SQL Editor. These scripts are idempotent (`ON CONFLICT DO NOTHING`,
+   `WHERE … IS NULL`).
+
+To regenerate `src/integrations/supabase/types.ts`:
+```bash
+npx supabase gen types typescript --project-id pqaxxhateycrklzlnhkc > src/integrations/supabase/types.ts
+```
+
+---
+
+## 11. Deployment
+
+- **Web**: Vercel, project linked to this repository. `vercel.json`
+  rewrites all paths to `/` so client-side routing handles deep links.
+  Production URL: `abbiatti-com.vercel.app`. Target domain:
+  `escapar.net`.
+- **Desktop**: Electron 41 wraps `dist/index.html`. Build with
+  `ELECTRON_BUILD=1 npm run build` (so Vite uses relative `base: "./"`),
+  then point Electron at `dist/`. Packaging via `@electron/packager`.
+- **Database**: Supabase managed Postgres. Migrations push via
+  Supabase CLI.
+
+---
+
+## 12. Conventions and rules
+
+These come from `CLAUDE.md` and are enforced in code review:
+
+- **Read `profiles.role` from the database, never from client state.**
+  All role decisions go through `getUserAccess` / `isSuperAdminUser`.
+- **Wrap every authenticated page in `ProtectedRoute`.** Then do the
+  role-specific gating inside the page or layout.
+- **Don't instantiate new Supabase clients.** Always import from
+  `@/integrations/supabase/client`.
+- **Employee UI stays simple.** `MyAgenda` is the model: big buttons,
+  photo upload, voice recording, no dense tables.
+- **Allowed table set**: `profiles`, `properties`, `tasks`, `bookings`,
+  `property_cohosts`, `organizations`, `services` (plus the ones
+  documented in §6.1). Do not invent tables. If a feature needs a new
+  table, write a migration first.
+- **Marketplace and WhatsApp Cloud API are not implemented.** Stub them
+  out or omit — do not fake successful network calls.
+
+---
+
+## 13. Roadmap (planned, not implemented)
+
+From `README.md`, in rough priority order:
+
+1. Rebuild the broken pages in §8 by either restoring their tables in
+   migrations or rewriting them against the current schema.
+2. Complete the guest portal (`/g/:slug`): services booking, photo
+   uploads with watermark, coupons, WhatsApp messaging.
+3. Marketplace: hosts renting items to other hosts, 10% Escapar
+   commission, driver-based delivery.
+4. Review system (guest → property, cohost → employee).
+5. WhatsApp Cloud API integration: welcome, reminders, checkout
+   messages.
+6. Cut domain over to `escapar.net`, security audit, performance pass.
+
+---
+
+## 14. Glossary
+
+| Term | Meaning |
+|---|---|
+| **Org** | A tenant — one customer business in the `organizations` table. |
+| **Cohost** | A profile assigned to one or more properties via `property_cohosts`. Either has `role = 'cohost'`, or any role + at least one `property_cohosts` row. |
+| **Manager** | Catch-all for "admin OR cohost". Used by `getUserAccess` to decide whether to show the management UI vs the employee agenda. |
+| **Pending invitation** | A `profiles` row whose `invitation_status` is not NULL. The user has been invited to an org but hasn't accepted yet. RLS uses `pending_org_id` so they can see their target org's data after signup. |
+| **Magic link QR** | A QR code that encodes a one-time login URL for a phone-only employee. |

@@ -99,8 +99,8 @@ export default function Rentals() {
   const { data: orgId } = useQuery({
     queryKey: ["myOrg", user?.id],
     queryFn: async () => {
-      const { data } = await supabase.from("profiles").select("organization_id").eq("id", user!.id).single();
-      return data?.organization_id as string;
+      const { data } = await supabase.from("profiles").select("org_id").eq("id", user!.id).single();
+      return data?.org_id as string;
     },
     enabled: !!user,
   });

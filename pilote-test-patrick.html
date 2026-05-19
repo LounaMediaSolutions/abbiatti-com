@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<!-- saved from url=(0145)file:///Users/macbookpro/Library/Containers/net.whatsapp.WhatsApp/Data/tmp/documents/9878506E-27FD-4E09-8C35-83FE89FF34CC/pilot_test_patrick.html -->
+<html lang="fr"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pilote Test — Patrick @ Béjaïa · 10-20 Août 2026</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --primary: #1E2761;
+  --accent: #F9C846;
+  --bg: #F5F7FB;
+  --card: #FFFFFF;
+  --border: #E5E7EB;
+  --text: #1E2761;
+  --muted: #6B7A99;
+  --success: #10B981;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+  --whatsapp: #25D366;
+  --airbnb: #FF5A5F;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  font-size: 15px;
+}
+.container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+
+/* HEADER */
+.hero-header {
+  background: linear-gradient(135deg, #1E2761 0%, #3B4FA0 100%);
+  color: white;
+  padding: 40px 24px;
+  margin: -24px -24px 24px;
+  border-radius: 0 0 16px 16px;
+}
+.hero-header h1 { font-size: 28px; margin-bottom: 8px; }
+.hero-header .subtitle { opacity: 0.9; font-size: 15px; margin-bottom: 16px; }
+.hero-header .badges { display: flex; gap: 8px; flex-wrap: wrap; }
+.hero-header .badge {
+  background: rgba(255,255,255,0.15);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ACTORS LEGEND */
+.actors {
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+.actors h2 { font-size: 14px; color: var(--primary); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+.actors-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.actor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  background: var(--bg);
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+.actor-emoji { font-size: 20px; }
+.actor-name { font-weight: 700; color: var(--primary); }
+.actor-role { font-size: 11px; color: var(--muted); }
+
+/* TIMELINE */
+.timeline {
+  position: relative;
+  padding-left: 50px;
+}
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 24px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--border);
+}
+
+/* PHASE */
+.phase {
+  position: relative;
+  margin-bottom: 32px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  padding: 20px;
+}
+.phase::before {
+  content: attr(data-num);
+  position: absolute;
+  left: -38px;
+  top: 18px;
+  width: 32px;
+  height: 32px;
+  background: var(--primary);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  z-index: 2;
+  box-shadow: 0 0 0 4px white, 0 0 0 7px var(--primary);
+}
+.phase.success::before { background: var(--success); box-shadow: 0 0 0 4px white, 0 0 0 7px var(--success); }
+.phase.warning::before { background: var(--warning); box-shadow: 0 0 0 4px white, 0 0 0 7px var(--warning); }
+.phase.airbnb::before { background: var(--airbnb); box-shadow: 0 0 0 4px white, 0 0 0 7px var(--airbnb); }
+
+.phase-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--border);
+}
+.phase-title h2 { font-size: 18px; color: var(--primary); margin-bottom: 4px; }
+.phase-title .meta { font-size: 12px; color: var(--muted); }
+.phase-time {
+  background: var(--bg);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+}
+.phase-time.live { background: #FEE2E2; color: var(--danger); }
+
+.phase-content { margin-top: 12px; }
+
+/* MESSAGE BUBBLES */
+.message {
+  margin: 12px 0;
+  padding: 14px;
+  border-radius: 12px;
+  position: relative;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.message.airbnb { background: #FFF1F2; border-left: 4px solid var(--airbnb); }
+.message.system { background: #EEF2FF; border-left: 4px solid var(--primary); }
+.message.whatsapp { background: #DCFCE7; border-left: 4px solid var(--whatsapp); }
+.message.guest { background: #FEF3C7; border-left: 4px solid var(--warning); }
+.message.staff { background: #F3E8FF; border-left: 4px solid #8B5CF6; }
+.message-from {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+.message-text { color: var(--text); }
+.message-text pre { white-space: pre-wrap; font-family: inherit; }
+
+/* SCREENSHOTS / MOCKUPS */
+.mockup {
+  background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+  padding: 12px;
+  border-radius: 16px;
+  margin: 12px 0;
+  max-width: 320px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+}
+.mockup-screen {
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  font-size: 13px;
+}
+.mockup-screen.dark { background: #1E293B; color: white; }
+
+/* CHECKLIST */
+.checklist {
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 14px;
+  margin: 10px 0;
+}
+.checklist h4 { font-size: 13px; color: var(--primary); margin-bottom: 10px; }
+.check-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 13px;
+}
+.check-item .icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--success);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.check-item.warning .icon { background: var(--warning); }
+.check-item.danger .icon { background: var(--danger); }
+
+/* PHOTO PROOF */
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+.photo-card {
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+  position: relative;
+}
+.photo-card .photo-icon {
+  font-size: 36px;
+  margin-bottom: 4px;
+}
+.photo-card .photo-label {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.photo-card .timestamp {
+  font-size: 9px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.photo-card .check-mark {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--success);
+  color: white;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}
+
+/* SERVICE GRID */
+.services {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+.service {
+  background: white;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  text-align: center;
+}
+.service.selected {
+  border-color: var(--success);
+  background: #ECFDF5;
+}
+.service .emoji { font-size: 24px; }
+.service .name { font-size: 12px; font-weight: 700; margin: 4px 0; }
+.service .price { font-size: 13px; color: var(--success); font-weight: 700; }
+.service .qty { font-size: 11px; color: var(--muted); }
+
+/* RECEIPT */
+.receipt {
+  background: white;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  margin: 10px 0;
+}
+.receipt-line {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+}
+.receipt-total {
+  border-top: 2px solid var(--primary);
+  padding-top: 8px;
+  margin-top: 8px;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--primary);
+}
+
+/* SUMMARY CARDS */
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.summary-card {
+  background: var(--primary);
+  color: white;
+  padding: 14px;
+  border-radius: 10px;
+}
+.summary-card .label {
+  font-size: 11px;
+  text-transform: uppercase;
+  opacity: 0.8;
+  letter-spacing: 1px;
+}
+.summary-card .value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-top: 4px;
+}
+
+/* ANOMALY ALERT */
+.anomaly {
+  background: #FEF2F2;
+  border: 2px solid var(--danger);
+  border-radius: 10px;
+  padding: 14px;
+  margin: 10px 0;
+}
+.anomaly h4 {
+  color: var(--danger);
+  font-size: 14px;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* TIPS */
+.tip {
+  background: #ECFDF5;
+  border-left: 4px solid var(--success);
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin: 10px 0;
+  font-size: 13px;
+}
+.tip strong { color: var(--success); }
+
+/* PRINT */
+@media print {
+  .hero-header { background: white; color: black; }
+  body { background: white; }
+  .phase { box-shadow: none; border: 1px solid #ddd; page-break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="hero-header">
+    <h1>🧪 Test Pilote — Patrick à Béjaïa</h1>
+    <div class="subtitle">Scénario complet de bout-en-bout · Du clic Airbnb au check-out</div>
+    <div class="badges">
+      <span class="badge">📅 10 → 20 Août 2026</span>
+      <span class="badge">🏠 Stylish 2BR Béjaïa</span>
+      <span class="badge">👥 3 voyageurs</span>
+      <span class="badge">⏱️ 10 nuits</span>
+      <span class="badge">💰 ~€950 TTC estimé</span>
+    </div>
+  </div>
+
+  <!-- ACTORS -->
+  <div class="actors">
+    <h2>🎭 Acteurs du scénario</h2>
+    <div class="actors-grid">
+      <div class="actor">
+        <div class="actor-emoji">🅰️</div>
+        <div><div class="actor-name">Airbnb</div><div class="actor-role">Plateforme</div></div>
+      </div>
+      <div class="actor">
+        <div class="actor-emoji">🤖</div>
+        <div><div class="actor-name">Louna Stays</div><div class="actor-role">Notre app</div></div>
+      </div>
+      <div class="actor">
+        <div class="actor-emoji">🧳</div>
+        <div><div class="actor-name">Patrick</div><div class="actor-role">Voyageur (FR)</div></div>
+      </div>
+      <div class="actor">
+        <div class="actor-emoji">👨‍💼</div>
+        <div><div class="actor-name">Djoudi</div><div class="actor-role">Admin / Hôte</div></div>
+      </div>
+      <div class="actor">
+        <div class="actor-emoji">🤝</div>
+        <div><div class="actor-name">Adel</div><div class="actor-role">Co-hôte</div></div>
+      </div>
+      <div class="actor">
+        <div class="actor-emoji">🧹</div>
+        <div><div class="actor-name">Fatima</div><div class="actor-role">Femme de ménage</div></div>
+      </div>
+      <div class="actor">
+        <div class="actor-emoji">🚗</div>
+        <div><div class="actor-name">Karim</div><div class="actor-role">Chauffeur / Logistique</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TIMELINE -->
+  <div class="timeline">
+
+    <!-- PHASE 1: AIRBNB BOOKING -->
+    <div class="phase airbnb" data-num="1">
+      <div class="phase-header">
+        <div class="phase-title">
+          <h2>🅰️ Réservation Airbnb confirmée</h2>
+          <div class="meta">Patrick réserve depuis Airbnb depuis Marseille</div>
+        </div>
+        <div class="phase-time">📅 J-30 · 10/07/2026 · 14h22</div>
+      </div>
+      <div class="phase-content">
+        <div class="message airbnb">
+          <div class="message-from">🅰️ Email Airbnb à Djoudi</div>
+          <div class="message-text">
+<strong>Réservation confirmée — Patrick Dubois</strong><br>
+Code de réservation : <strong>HMAB1234567890</strong><br>
+Arrivée : 10 août 2026 (15h00)<br>
+Départ : 20 août 2026 (11h00)<br>
+Voyageurs : 3 (2 adultes, 1 enfant)<br>
+Total : 950 € (versé à Airbnb)<br>
+Origine : Marseille, France 🇫🇷<br>
+Téléphone : +33 6 12 34 56 78
+          </div>
+        </div>
+        <div class="message system">
+          <div class="message-from">🤖 Louna Stays — Synchronisation iCal automatique</div>
+          <div class="message-text">
+✓ Réservation HMAB1234567890 importée<br>
+✓ Calendrier Béjaïa bloqué : 10-20 août<br>
+✓ Profil Patrick créé (langue : FR)<br>
+✓ Tâches automatiques planifiées :<br>
+&nbsp;&nbsp;• 09/08 : ménage avant arrivée<br>
+&nbsp;&nbsp;• 10/08 : check-in Patrick<br>
+&nbsp;&nbsp;• 20/08 : check-out + ménage après<br>
+✓ Notification envoyée à Djoudi + Adel
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PHASE 2: WELCOME MESSAGE WITH SERVICES -->
+    <div class="phase" data-num="2">
+      <div class="phase-header">
+        <div class="phase-title">
+          <h2>📱 Message de bienvenue automatique</h2>
+          <div class="meta">Louna Stays envoie le livret digital + catalogue de services à Patrick</div>
+        </div>
+        <div class="phase-time">📅 J-25 · 16/07/2026 · 09h00</div>
+      </div>
+      <div class="phase-content">
+        <div class="message whatsapp">
+          <div class="message-from">💬 Louna Stays → Patrick (WhatsApp)</div>
+          <div class="message-text">
+Bonjour Patrick ! 👋<br><br>
+Au nom de toute l'équipe, je vous souhaite la bienvenue ! Votre séjour à <strong>Béjaïa</strong> du <strong>10 au 20 août</strong> est confirmé.<br><br>
+Voici votre <strong>livret d'accueil digital</strong> avec :<br>
+✓ Wi-Fi &amp; accès au logement<br>
+✓ Guide local (restos, plages)<br>
+✓ Tous nos services à louer<br><br>
+👉 <a href="https://escapar.net/guest/HMAB1234567890" style="color:var(--primary);">https://escapar.net/guest/HMAB1234567890</a><br><br>
+N'hésitez pas si vous avez la moindre question !<br>
+— Adel, votre co-hôte
+          </div>
+        </div>
+        <div class="tip">
+          💡 <strong>Astuce :</strong> Le lien personnel envoyé à Patrick contient un livret en français/anglais/arabe avec services pré-remplis. Pas besoin pour Patrick d'installer une app.
+        </div>
+      </div>
+    </div>
+
+    <!-- PHASE 3: GUEST SELECTS SERVICES -->
+    <div class="phase warning" data-num="3">
+      <div class="phase-header">
+        <div class="phase-title">
+          <h2>🛍️ Patrick choisit ses services</h2>
+          <div class="meta">Il ouvre le livret et coche les extras qu'il veut</div>
+        </div>
+        <div class="phase-time">📅 J-15 · 26/07/2026 · 21h45</div>
+      </div>
+      <div class="phase-content">
+        <p style="font-size:13px; margin-bottom:10px;">Patrick voit le catalogue dans son navigateur et sélectionne :</p>
+        <div class="services">
+          <div class="service selected">
+            <div class="emoji">🏖️</div>
+            <div class="name">Pack Plage</div>
+            <div class="price">€15/jour</div>
+            <div class="qty">× 8 jours</div>
+          </div>
+          <div class="service selected">
+            <div class="emoji">👶</div>
+            <div class="name">Lit parapluie</div>
+            <div class="price">€5/jour</div>
+            <div class="qty">× 10 jours</div>
+          </div>
+          <div class="service selected">
+            <div class="emoji">📡</div>
+            <div class="name">Wi-Fi portable</div>
+            <div class="price">€5/jour</div>
+            <div class="qty">× 10 jours</div>
+          </div>
+          <div class="service selected">
+            <div class="emoji">✈️</div>
+            <div class="name">Transfert aéroport</div>
+            <div class="price">€25</div>
+            <div class="qty">× 2 trajets</div>
+          </div>
+          <div class="service selected">
+            <div class="emoji">🍱</div>
+            <div class="name">Panier accueil</div>
+            <div class="price">€40</div>
+            <div class="qty">× 1</div>
+          </div>
+          <div class="service">
+            <div class="emoji">🤿</div>
+            <div class="name">Scooter SM</div>
+            <div class="price">€15/j</div>
+            <div class="qty">non choisi</div>
+          </div>
+        </div>
+        <div class="receipt">
+          <div class="receipt-line"><span>Pack Plage × 8 jours</span><span>€120</span></div>
+          <div class="receipt-line"><span>Lit parapluie × 10 jours</span><span>€50</span></div>
+          <div class="receipt-line"><span>Wi-Fi portable × 10 jours</span><span>€50</span></div>
+          <div class="receipt-line"><span>Transfert aéroport × 2</span><span>€50</span></div>
+          <div class="receipt-line"><span>Panier d'accueil</span><span>€40</span></div>
+          <div class="receipt-line receipt-total"><span>TOTAL EXTRAS</span><span>€310</span></div>
+        </div>
+        <p style="font-size:12px; color:var(--muted);">📝 Patrick ajoute une note : "Lit parapluie pour bébé de 8 mois — taille XS svp"</p>
+      </div>
+    </div>
+
+    <!-- PHASE 4: WHATSAPP TO ADEL -->
+    <div class="phase" data-num="4">
+      <div class="phase-header">
+        <div class="phase-title">
+          <h2>📲 Demande WhatsApp envoyée à Adel</h2>
+          <div class="meta">Patrick clique "Demander via WhatsApp" — message pré-rempli</div>
+        </div>
+        <div class="phase-time">📅 J-15 · 26/07/2026 · 21h47</div>
+      </div>
+      <div class="phase-content">
+        <div class="message whatsapp">
+          <div class="message-from">💬 Patrick → Adel (WhatsApp)</div>
+          <div class="message-text">
+Bonjour Adel,<br><br>
+Je suis Patrick Dubois (HMAB1234567890).<br>
+Je souhaite réserver ces extras :<br><br>
+• Pack Plage × 8 jours = €120<br>
+• Lit parapluie × 10 jours = €50<br>
+• Wi-Fi portable × 10 jours = €50<br>
+• Transfert aéroport × 2 = €50<br>
+• Panier d'accueil = €40<br><br>
+<strong>Total extras : €310</strong><br><br>
+📝 Note : Lit parapluie pour bébé de 8 mois (taille XS svp)<br>
+✈️ Vol arrivée AF1342, terminal 2, 14h30<br>
+✈️ Vol retour AF1343, terminal 2, 12h00<br><br>
+Paiement : espèces à l'arrivée OK ?<br><br>
+Merci !
+          </div>
+        </div>
+        <div class="message whatsapp">
+          <div class="message-from">💬 Adel → Patrick (réponse 5 min)</div>
+          <div class="message-text">
+Bonjour Patrick ! 🌟<br><br>
+Tout est noté, merci ! Je confirme :<br>
+✓ Pack Plage prêt<br>
+✓ Lit parapluie taille XS commandé<br>
+✓ Wi-Fi portable activé<br>
+✓ Karim (notre chauffeur) viendra vous chercher AF1342 le 10/08 à 14h30<br>
+✓ Panier d'accueil avec produits frais<br><br>
+💵 Paiement espèces à l'arrivée : OK ! €310 + caution €100 (remboursée au départ).<br><br>
+Bon voyage en attendant ! 👋
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PHASE 5: ADEL BRIEFS THE TEAM -->
+    <div class="phase" data-num="5">
+      <div class="phase-header">
+        <div class="phase-title">
+          <h2>👥 Adel brief l'équipe (Fatima + Karim)</h2>
+          <div class="meta">Création des tâches dans Louna Stays — chacun reçoit notification</div>
+        </div>
+        <div class="phase-time">📅 J-3 · 07/08/2026 · 18h00</div>
+      </div>
+      <div class="phase-content">
+        <div class="message system">
+          <div class="message-from">🤖 Louna Stays — Tâches créées</div>
+          <div class="message-text">
+🧹 <strong>Tâche #T1 → Fatima (Ménage)</strong><br>
+&nbsp;&nbsp;• Date : 09/08/2026 — avant 14h<br>
+&nbsp;&nbsp;• Bien : Stylish 2BR Béjaïa<br>
+&nbsp;&nbsp;• Spéciale : préparer lit parapluie XS<br><br>
+🚗 <strong>Tâche #T2 → Karim (Pickup)</strong><br>
+&nbsp;&nbsp;• Date : 10/08/2026 — 14h30<br>
+&nbsp;&nbsp;• Vol : AF1342 Terminal 2<br>
+&nbsp;&nbsp;• Voyageurs : 3 (2 adultes + bébé)<br>
+&nbsp;&nbsp;• Apporter : Pack Plage + Wi-Fi router + lit parapluie<br><br>
+🚗 <strong>Tâche #T3 → Karim (Drop-off)</strong><br>
+&nbsp;&nbsp;• Date : 20/08/2026 — 10h00<br>
+&nbsp;&nbsp;• Vol : AF1343 Terminal 2 12h00
+          </div>
+        </div>
+        <div class="message whatsapp">
+          <div class="message-from">💬 Adel → Groupe WhatsApp Équipe</div>
+          <div class="message-text">
+Salut l'équipe ! 👋<br><br>
+Patrick (3 pers, 1 bébé) arrive lundi 10/08.<br><br>
+🧹 <strong>Fatima :</strong> ménage dimanche 09/08 avant 14h. Préparer lit parapluie XS pour bébé. Vérifie aussi le Wi-Fi router portable (chargé).<br><br>
+🚗 <strong>Karim :</strong> pickup aéroport lundi 10/08 à 14h30 (vol AF1342). Apporter : Pack Plage, Wi-Fi portable, lit parapluie. Panier d'accueil livré directement à l'apt.<br><br>
+Tout est dans l'app Louna Stays — vous avez reçu vos notifs ?<br><br>
+Merci à tous ! 💪
+          </div>
+        </div>
+        <div class="message whatsapp">
+          <div class="message-from">💬 Fatima → Groupe</div>
+          <div class="message-text">Reçu Adel ! Je suis disponible dimanche, je commence à 9h ✅</div>
+        </div>
+        <div class="message whatsapp">
+          <div class="message-from">💬 Karim → Groupe</div>
+          <div class="message-text">Bien noté pour le pickup et le matériel. Je passe chercher le matos chez Adel samedi soir ✅</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PHASE 6: CLEANER PREPARES (FATIMA) -->
+    <div class="phase success" data-num="6">
+      <div class="phase-header">
+        <div class="phase-title">
+          <h2>🧹 Fatima prépare l'appartement</h2>
+          <div class="meta">Checklist visuelle dans l'app + photos de confirmation</div>
+        </div>
+        <div class="phase-time">📅 J-1 · 09/08/2026 · 09h00 → 13h00</div>
+      </div>
+      <div class="phase-content">
+        <div class="checklist">
+          <h4>✅ Checklist ménage Fatima (9 tâches)</h4>
+          <div class="check-item"><div class="icon">✓</div>Lits faits avec linge propre — 09h45</div>
+          <div class="check-item"><div class="icon">✓</div>Salle de bain nettoyée + serviettes neuves — 10h30</div>
+          <div class="check-item"><div class="icon">✓</div>Cuisine désinfectée + vaisselle rangée — 11h00</div>
+          <div class="check-item"><div class="icon">✓</div>Aspirateur passé partout — 11h30</div>
+          <div class="check-item"><div class="icon">✓</div>Poubelles vidées — 11h45</div>
+          <div class="check-item"><div class="icon">✓</div>Café, thé, sucre réapprovisionnés — 12h00</div>
+          <div class="check-item"><div class="icon">✓</div>Télécommandes vérifiées + piles — 12h15</div>
+          <div class="check-item"><div class="icon">✓</div>Lit parapluie XS monté dans la chambre — 12h30</div>
+          <div class="check-item warning"><div class="icon">⚠</div>Robinet cuisine fuit légèrement — signalé à Adel</div>
+        </div>
+        <div class="photo-grid">
+          <div class="photo-card"><div class="check-mark">✓</div><div class="photo-icon">🛏️</div><div class="photo-label">Chambre 1</div><div class="timestamp">09:45</div></div>
+          <div class="photo-card"><div class="check-mark">✓</div><div class="photo-icon">🛏️</div><div class="photo-label">Chambre 2</div><div class="timestamp">09:50</div></div>
+          <div class="photo-card"><div class="check-mark">✓</div><div class="photo-icon">🚿</div><div class="photo-label">SDB</div><div class="timestamp">10:30</div></div>
+          <div class="photo-card"><div class="check-mark">✓</div><div class="photo-icon">🍳</div><div class="photo-label">Cuisine</div><div class="timestamp">11:00</div></div>
+          <div class="photo-card"><div class="check-mark">✓</div><div class="photo-icon">🛋️</div><div class="photo-label">Salon</div><div class="timestamp">11:30</div></div>
+          <div class="photo-card"><div class="check-mark">✓</div><div class="photo-icon">👶</div><div class="photo-label">Lit bébé</div><div class="timestamp">12:30</div></div>
+        </div>
+        <div class="anomaly">
+          <h4>⚠️ Anomalie signalée par Fatima</h4>
+          <p style="font-size:13px;">Robinet cuisine fuit légèrement (gouttes au robinet froid). Photo prise. Pas urgent mais à réparer dans la semaine.</p>
+        </div>
+        <div class="message whatsapp">
+          <div class="message-from">💬 Fatima → Adel (via app)</div>
+          <div class="message-text">
+✅ Ménage terminé Adel ! 9/9 items validés avec photos.<br><br>
+⚠️ Petit signalement : le robinet de la cuisine fuit légèrement. Photo dans l'app. Patrick peut utiliser, mais penser à le faire réparer.<br><br>
+Patrick peut arriver, tout est prêt ! 🌟
+          </div>
+        </div>
+        <div class="message system">
+          <div class="message-from">🤖 Louna Stays — Notifications</div>
+          <div class="message-text">
+✅ Tâche T1 terminée par Fatima — preuve photos validée<br>
+🔧 Ticket maintenance #M1 créé : "Robinet cuisine — fuite légère"<br>
+&nbsp;&nbsp;Assigné à : Hassan (plombier partenaire)<br>
+&nbsp;&nbsp;Priorité : Normale (pas avant le 22/08 — après départ Patrick)
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PHASE 7: DRIVER PREPARES (KARIM) -->
+    <div class="phase success" data-num="7">
+      <div class="phase-header">
+        <div class="phase-title">
+          <h2>🚗 Karim prépare le matériel &amp; briefing</h2>
+          <div class="meta">Karim charge tous les extras dans sa voiture la veille</div>
+        </div>
+        <div class="phase-time">📅 J-1 · 09/08/2026 · 19h00</div>
+      </div>
+      <div class="phase-content">
+        <div class="checklist">
+          <h4>📦 Préparation matériel Karim</h4>
+          <div class="check-item"><div class="icon">✓</div>🏖️ Pack Plage (parasol + 2 chaises + glacière) — vérifié</div>
+          <div class="check-item"><div class="icon">✓</div>📡 Wi-Fi portable Ooredoo — chargé 100% + carte 50GB</div>
+          <div class="check-item"><div class="icon">✓</div>👶 Lit parapluie XS Bébé Confort — monté à blanc, OK</div>
+          <div class="check-item"><div class="icon">✓</div>🍱 Panier d'accueil commandé chez Boulangerie Slimane (livré 14h)</div>
+          <div class="check-item"><div class="icon">✓</div>🚗 Voiture lavée + plein essence + GPS programmé aéroport</div>
+          <div class="check-item"><div class="icon">✓</div>📞 Numéro Patrick enregistré, +33 6 12 34 56 78</div>
+          <div class="check-item"><div class="icon">✓</div>📋 Reçu / contrat de location matériel imprimé en 2 exemplaires</div>
+        </div>
+        <div class="photo-grid">
+          <div class="photo-card"><div class="check-mark">✓</div><div class="photo-icon">🏖️</div><div class="photo-label">Pack Plage</div><div class="timestamp">19:15</div></div>
+          <div class="photo-card"><div class="check-mark">✓</div><div class="photo-icon">📡</div><div class="photo-label">Wi-Fi router</div><div class="timestamp">19:20</div></div>
+          <div class="photo-card"><div class="check-mark">✓</div><div class="photo-icon">👶</div><div class="photo-label">Lit XS</div><div class="timestamp">19:25</div></div>
+          <div class="photo-card"><div class="check-mark">✓</div><div class="photo-icon">🚗</div><div class="photo-label">Voiture</div><div class="timestamp">19:30</div></div>
+        </div>
+        <div class="message whatsapp">
+          <div class="message-from">💬 Karim → Adel (via app)</div>
+          <div class="message-text">
+✅ Matériel chargé dans la voiture, photos en preuve.<br><br>
+Demain je pars vers 13h45 pour être à l'aéroport à 14h15 (avance 15 min). Vol AF1342 atterrit 14h30.<br><br>
+Patrick sera reconnaissable : grand pancarte "PATRICK DUBOIS — LOUNA STAYS".<br><br>
+Tout bon ! 💪
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PHASE 8: ARRIVAL DAY -->
+    <div class="phase warning" data-num="8">
+      <div class="phase-header">
+        <div class="phase-title">
+          <h2>✈️ Jour J — Arrivée de Patrick</h2>
+          <div class="meta">Pickup aéroport → drop-off appartement → check-in</div>
+        </div>
+        <div class="phase-time live">🔴 LIVE · 10/08/2026 · 14h00 - 16h00</div>
+      </div>
+      <div class="phase-content">
+        <div class="message system">
+          <div class="message-from">🤖 Louna Stays — Timeline aujourd'hui</div>
+          <div class="message-text">
+<strong>14h15</strong> — Karim à l'aéroport avec pancarte<br>
+<strong>14h30</strong> — Vol AF1342 atterrissage à l'heure<br>
+<strong>14h45</strong> — Patrick + famille rencontrent Karim ✓<br>
+<strong>15h10</strong> — Karim démarre vers l'appartement<br>
+<strong>15h35</strong> — Arrivée à Rue Fatah Mahfoudi<br>
+<strong>15h40</strong> — Adel attend à l'entrée immeuble (badge prêt)<br>
+<strong>15h45</strong> — Visite de l'appartement<br>
+<strong>15h55</strong> — Remise des clés + signature contrat + caution €100<br>
+<strong>16h00</strong> — Patrick installé. Karim part. Adel rentre.
+          </div>
+        </div>
+        <div class="message whatsapp">
+          <div class="message-from">💬 Karim → Groupe (15h00)</div>
+          <div class="message-text">✅ Patrick et famille récupérés. Sympa, pas de problème. Sa femme est ravie pour le lit bébé déjà installé. On est en route !</div>
+        </div>
+        <div class="message whatsapp">
+          <div class="message-from">💬 Adel → Groupe (16h05)</div>
+          <div class="message-text">
+✅ Check-in terminé !<br><br>
+• Badge remis ✓<br>
+• Clés appartement remises ✓<br>
+• Wi-Fi connecté (testé sur tel de Patrick) ✓<br>
+• Pack Plage déposé sur balcon ✓<br>
+• Wi-Fi portable Ooredoo testé fonctionnel ✓<br>
+• Lit parapluie déjà monté + bébé content ✓<br>
+• Panier d'accueil sur la table : "Trop attentionné !" — Patrick<br>
+• Caution €100 espèces reçue<br>
+• Reçu signé en 2 exemplaires<br><br>
+Patrick est ravi. Bonne soirée à tous ! 🌟
+          </div>
+        </div>
+        <div class="message guest">
+          <div class="message-from">🧳 Patrick → Adel (16h30)</div>
+          <div class="message-text">
+Adel merci infiniment ! L'accueil est PARFAIT. Le bébé adore son lit. La vue sur le port est magnifique. On va bien profiter !<br><br>
+Une question : où trouver des couches taille 3 pour bébé ? On en a oublié 😅
+          </div>
+        </div>
+        <div class="message whatsapp">
+          <div class="message-from">💬 Adel → Patrick</div>
+          <div class="message-text">
+Pas de souci Patrick ! Le supermarché Ritaj Mall est juste sous votre immeuble (niveau -1, accès direct). Vous y trouverez tout. Sinon Karim peut faire les courses pour vous demain matin contre €10 si vous préférez ! 😊
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PHASE 9: DURING THE STAY -->
+    <div class="phase" data-num="9">
+      <div class="phase-header">
+        <div class="phase-title">
+          <h2>🌴 Pendant le séjour (jours 2 à 9)</h2>
+          <div class="meta">Suivi léger, dispos en cas de besoin</div>
+        </div>
+        <div class="phase-time">📅 11-19/08/2026</div>
+      </div>
+      <div class="phase-content">
+        <div class="checklist">
+          <h4>📊 Activité notée dans l'app</h4>
+          <div class="check-item"><div class="icon">✓</div>11/08 : Patrick demande resto traditionnel — Adel envoie 3 recommandations</div>
+          <div class="check-item"><div class="icon">✓</div>12/08 : Patrick va à Yemma Gouraya, photo partagée</div>
+          <div class="check-item"><div class="icon">✓</div>14/08 : Patrick demande excursion Cap Carbon — vendue €60 (commission Adel €15)</div>
+          <div class="check-item"><div class="icon">✓</div>15/08 : Aïd al-Adha — Adel envoie message de bons vœux + offre 1 plat traditionnel offert</div>
+          <div class="check-item warning"><div class="icon">⚠</div>17/08 : Patrick signale climatiseur chambre bruyant — Hassan vient à 19h, problème résolu (filtre encrassé)</div>
+          <div class="check-item"><div class="icon">✓</div>18/08 : Karim fait une course supermarché pour Patrick (€15 + €10 service)</div>
+          <div class="check-item"><div class="icon">✓</div>19/08 : Adel rappelle check-out demain + offre départ tardif jusqu'à 14h pour €25</div>
+        </div>
+        <div class="message guest">
+          <div class="message-from">🧳 Patrick → Adel (17/08)</div>
+          <div class="message-text">Adel le climatiseur de la chambre fait du bruit, on a du mal à dormir 😬</div>
+        </div>
+        <div class="message whatsapp">
+          <div class="message-from">💬 Adel → Patrick (réponse 8 min)</div>
+          <div class="message-text">
+Désolé Patrick ! Hassan, notre technicien partenaire, peut passer ce soir vers 19h. Ça vous va ? Ce sera réparé avant la nuit, sans surcoût bien sûr.
+          </div>
+        </div>
+        <div class="message system">
+          <div class="message-from">🤖 Louna Stays — Auto</div>
+          <div class="message-text">
+🔧 Ticket maintenance #M2 créé "Climatiseur bruyant"<br>
+&nbsp;&nbsp;Assigné : Hassan<br>
+&nbsp;&nbsp;Priorité : Haute (urgence guest)<br>
+&nbsp;&nbsp;ETA : 19h00 17/08<br>
+✓ 19h45 — Résolu par Hassan (filtre changé)<br>
+✓ Photo "avant/après" jointe au ticket
+          </div>
+        </div>
+        <div class="message guest">
+          <div class="message-from">🧳 Patrick → Adel (17/08 20h00)</div>
+          <div class="message-text">Hassan vient de partir, c'est nickel maintenant ! Merci pour la réactivité 🙏</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PHASE 10: CHECK-OUT -->
+    <div class="phase warning" data-num="10">
+      <div class="phase-header">
+        <div class="phase-title">
+          <h2>🚪 Jour de départ — Check-out</h2>
+          <div class="meta">Check-out + retour à l'aéroport + remboursement caution</div>
+        </div>
+        <div class="phase-time">📅 J+10 · 20/08/2026 · 09h00 - 12h00</div>
+      </div>
+      <div class="phase-content">
+        <div class="message system">
+          <div class="message-from">🤖 Louna Stays — Rappel auto à Patrick (la veille 19h)</div>
+          <div class="message-text">
+👋 Bonjour Patrick !<br><br>
+Petit rappel pour demain matin :<br>
+✓ Check-out à 11h00<br>
+✓ Karim vous récupère à 10h00 pour AF1343 (12h00)<br>
+✓ Laissez les clés et badge sur la table<br>
+✓ Pas besoin de laver la vaisselle<br>
+✓ Caution €100 sera remboursée espèces avant départ<br><br>
+Bon retour ! 🌟
+          </div>
+        </div>
+        <div class="message whatsapp">
+          <div class="message-from">💬 Adel → Karim (09h45)</div>
+          <div class="message-text">Karim, tu peux passer maintenant pour le check-out ? Patrick est prêt en avance.</div>
+        </div>
+        <div class="checklist">
+          <h4>✅ Check-out par Karim (09h55)</h4>
+          <div class="check-item"><div class="icon">✓</div>État appartement vérifié — RAS</div>
+          <div class="check-item"><div class="icon">✓</div>Badge + clés récupérés</div>
+          <div class="check-item"><div class="icon">✓</div>Pack Plage récupéré complet (parasol + chaises + glacière)</div>
+          <div class="check-item"><div class="icon">✓</div>Wi-Fi portable récupéré (sans dommage)</div>
+          <div class="check-item"><div class="icon">✓</div>Lit parapluie démonté et récupéré</div>
+          <div class="check-item"><div class="icon">✓</div>Caution €100 remboursée espèces à Patrick</div>
+          <div class="check-item"><div class="icon">✓</div>Reçu signé "tout récupéré, caution rendue"</div>
+        </div>
+        <div class="message whatsapp">
+          <div class="message-from">💬 Karim → Groupe (12h05)</div>
+          <div class="message-text">
+✅ Patrick déposé à l'aéroport, vol enregistré OK.<br><br>
+Tout le matériel récupéré sans problème. Caution rendue. Famille très contente, ils ont promis de revenir l'année prochaine !<br><br>
+Sur le retour je dépose le matos chez Adel.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PHASE 11: POST-DEPARTURE CLEANING -->
+    <div class="phase success" data-num="11">
+      <div class="phase-header">
+        <div class="phase-title">
+          <h2>🧹 Ménage après départ</h2>
+          <div class="meta">Fatima retourne nettoyer l'appartement après Patrick</div>
+        </div>
+        <div class="phase-time">📅 J+10 · 20/08/2026 · 12h30 - 15h30</div>
+      </div>
+      <div class="phase-content">
+        <div class="checklist">
+          <h4>✅ Ménage post-départ</h4>
+          <div class="check-item"><div class="icon">✓</div>Linge sale collecté (draps + serviettes)</div>
+          <div class="check-item"><div class="icon">✓</div>SDB désinfectée + douche détartrée</div>
+          <div class="check-item"><div class="icon">✓</div>Cuisine nettoyée à fond</div>
+          <div class="check-item"><div class="icon">✓</div>Aspirateur + serpillière partout</div>
+          <div class="check-item"><div class="icon">✓</div>Inventaire vérifié — tout présent (couvertures, oreillers, vaisselle)</div>
+          <div class="check-item"><div class="icon">✓</div>Stocks réapprovisionnés (PQ, savon, café)</div>
+          <div class="check-item"><div class="icon">✓</div>Photos finales avant prochain voyageur</div>
+          <div class="check-item warning"><div class="icon">⚠</div>Tache de café sur tapis salon — nettoyage renforcé fait, RAS</div>
+        </div>
+        <div class="message system">
+          <div class="message-from">🤖 Louna Stays — Tâche T4 terminée</div>
+          <div class="message-text">
+✅ Ménage post-départ validé<br>
+✓ Photos confirmées (8 zones)<br>
+✓ Aucun objet manquant<br>
+✓ Logement disponible pour prochaine arrivée
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PHASE 12: REVIEW + REVENUE -->
+    <div class="phase success" data-num="12">
+      <div class="phase-header">
+        <div class="phase-title">
+          <h2>⭐ Avis Airbnb + Bilan financier</h2>
+          <div class="meta">Patrick laisse un avis 5 étoiles, Louna Stays calcule le bilan</div>
+        </div>
+        <div class="phase-time">📅 J+11 · 21/08/2026 · 18h30</div>
+      </div>
+      <div class="phase-content">
+        <div class="message airbnb">
+          <div class="message-from">🅰️ Avis Airbnb de Patrick</div>
+          <div class="message-text">
+⭐⭐⭐⭐⭐ <strong>5 étoiles</strong><br><br>
+"Séjour parfait à Béjaïa ! Adel et son équipe sont aux petits soins. L'app digitale avec toutes les infos est super pratique, le lit bébé prêt avant notre arrivée a été un vrai plus. Karim très sympa pour les transferts. Une fuite/clim a été réparée en 30 min. Le mall sous l'immeuble a sauvé nos achats de couches 😄. On reviendra !"
+          </div>
+        </div>
+        <div class="summary-grid">
+          <div class="summary-card">
+            <div class="label">Hébergement</div>
+            <div class="value">€950</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Extras vendus</div>
+            <div class="value">€310</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Excursion (commission)</div>
+            <div class="value">€15</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Course supermarché</div>
+            <div class="value">€10</div>
+          </div>
+          <div class="summary-card" style="background:var(--success);">
+            <div class="label">REVENU TOTAL</div>
+            <div class="value">€1 285</div>
+          </div>
+          <div class="summary-card" style="background:var(--airbnb);">
+            <div class="label">Note séjour</div>
+            <div class="value">5 ⭐</div>
+          </div>
+        </div>
+        <div class="tip">
+          💡 <strong>Insight :</strong> Sans Louna Stays, Patrick aurait juste payé €950 hébergement. Avec l'app + services proactifs, +33% de revenus extras. Et l'expérience 5★ = potentiel de retour + recommandations.
+        </div>
+      </div>
+    </div>
+
+    <!-- PHASE 13: SUMMARY & LEARNINGS -->
+    <div class="phase" data-num="✓">
+      <div class="phase-header">
+        <div class="phase-title">
+          <h2>🎯 Bilan du Pilote &amp; Leçons</h2>
+          <div class="meta">Ce qui a marché, ce qu'on améliore pour la prochaine</div>
+        </div>
+        <div class="phase-time">📅 22/08/2026 — Rétrospective</div>
+      </div>
+      <div class="phase-content">
+        <h3 style="color:var(--success); margin-bottom:8px;">✅ Ce qui a parfaitement marché</h3>
+        <ul style="margin-left:20px; font-size:13px; line-height:1.8;">
+          <li>Sync iCal Airbnb → Louna Stays automatique</li>
+          <li>Livret digital reçu par Patrick : -80% questions</li>
+          <li>Catalogue services en self-service : €310 d'upsells</li>
+          <li>Coordination équipe via app + WhatsApp groupe</li>
+          <li>Photos de preuve ménage et matériel = traçabilité totale</li>
+          <li>Réactivité maintenance (clim 30 min, fuite robinet planifiée)</li>
+          <li>Caution espèces gérée proprement sans litige</li>
+          <li>Avis 5 étoiles automatique à la fin</li>
+        </ul>
+        <h3 style="color:var(--warning); margin-top:16px; margin-bottom:8px;">⚠️ À améliorer</h3>
+        <ul style="margin-left:20px; font-size:13px; line-height:1.8;">
+          <li>Anticiper plus tôt les pannes (clim aurait dû être révisée avant)</li>
+          <li>Proposer pack "courses + couches" en standard pour familles</li>
+          <li>Automatiser la facture conforme NIF + déclaration police pour étrangers</li>
+          <li>Ajouter pourboire suggéré pour cleaner/driver dans l'app guest</li>
+        </ul>
+        <h3 style="color:var(--primary); margin-top:16px; margin-bottom:8px;">🚀 Idées concrètes pour la suite</h3>
+        <ul style="margin-left:20px; font-size:13px; line-height:1.8;">
+          <li>Pack "Famille avec bébé" : car seat + lit + table à langer + courses = €60/séjour</li>
+          <li>Carte interactive : restos partenaires avec -10% pour les guests Louna Stays</li>
+          <li>Système de "scan QR pour signaler problème" dans chaque pièce</li>
+          <li>Auto-déclaration séjour police générée 24h après check-in</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FINAL FOOTER -->
+  <div style="background:var(--primary); color:white; padding:24px; border-radius:16px; margin-top:32px; text-align:center;">
+    <h2 style="font-size:20px; margin-bottom:8px;">🎉 Pilote Réussi — Patrick reviendra</h2>
+    <p style="opacity:0.9; font-size:14px;">12 phases · 7 acteurs · 10 jours · Avis 5★ · €1 285 de revenus</p>
+    <p style="opacity:0.8; font-size:12px; margin-top:12px;">Powered by Louna Stays · escapar.net</p>
+  </div>
+
+</div>
+
+
+</body></html>

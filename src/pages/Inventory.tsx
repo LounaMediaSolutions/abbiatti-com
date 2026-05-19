@@ -52,10 +52,10 @@ export default function Inventory() {
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const { data: profile } = await supabase.from("profiles").select("organization_id").eq("id", user.id).maybeSingle();
-      if (!profile?.organization_id) return;
-      setOrgId(profile.organization_id);
-      const { data: props } = await supabase.from("properties").select("id, name").eq("organization_id", profile.organization_id).order("name");
+      const { data: profile } = await supabase.from("profiles").select("org_id").eq("id", user.id).maybeSingle();
+      if (!profile?.org_id) return;
+      setOrgId(profile.org_id);
+      const { data: props } = await supabase.from("properties").select("id, name").eq("org_id", profile.org_id).order("name");
       setProperties(props ?? []);
       if (props && props.length > 0) setPropertyId(props[0].id);
     })();

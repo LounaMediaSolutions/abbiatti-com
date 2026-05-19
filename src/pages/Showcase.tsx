@@ -72,7 +72,7 @@ const Showcase = () => {
     });
     setSubmitting(false);
     if (error) return toast.error(error.message);
-    toast.success("Demande envoyée ! L'agence va vous recontacter.");
+    toast.success("Demande envoyée ! L'organisation va vous recontacter.");
     setRequesting(null);
     setForm({ guest_name: "", guest_email: "", guest_phone: "", check_in: "", check_out: "", guests_count: 2, message: "" });
   };
@@ -84,7 +84,7 @@ const Showcase = () => {
       <div className="min-h-screen flex items-center justify-center bg-background p-6">
         <Card className="p-8 text-center max-w-md">
           <h1 className="text-xl font-semibold mb-2">Vitrine introuvable</h1>
-          <p className="text-muted-foreground">Cette agence n'a pas encore publié sa vitrine.</p>
+          <p className="text-muted-foreground">Cette organisation n'a pas encore publié sa vitrine.</p>
         </Card>
       </div>
     );

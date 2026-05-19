@@ -99,17 +99,29 @@ export const CleaningChecklist = ({
   const doneCount = items.filter((i) => i.done).length;
 
   return (
-    <Card className="p-4 shadow-card">
+    <Card className="p-4 shadow-card" data-testid="cleaning-checklist">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold flex items-center gap-2">
           <Check className="h-4 w-4 text-primary" /> Checklist ménage
         </h3>
-        <span className="text-sm text-muted-foreground">{doneCount}/{items.length}</span>
+        <span className="text-sm text-muted-foreground" data-testid="checklist-progress">
+          {doneCount}/{items.length}
+        </span>
       </div>
-      <ul className="space-y-2">
+      <ul className="space-y-2" data-testid="checklist-items">
         {items.map((it) => (
-          <li key={it.id} className="flex items-center gap-3 text-sm">
-            <Checkbox checked={it.done} onCheckedChange={() => toggle(it)} id={`chk-${it.id}`} />
+          <li
+            key={it.id}
+            className="flex items-center gap-3 text-sm"
+            data-testid="checklist-item"
+            data-done={it.done}
+          >
+            <Checkbox
+              checked={it.done}
+              onCheckedChange={() => toggle(it)}
+              id={`chk-${it.id}`}
+              data-testid="checklist-item-checkbox"
+            />
             <label htmlFor={`chk-${it.id}`} className={`flex-1 cursor-pointer ${it.done ? "line-through text-muted-foreground" : ""}`}>
               {it.label}
             </label>

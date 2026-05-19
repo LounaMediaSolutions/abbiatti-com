@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from "@/components/ui/dialog";
@@ -23,7 +25,7 @@ import { PropertyApprovalTimeline } from "@/components/PropertyApprovalTimeline"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
-import { getUserAccess } from "@/lib/access";
+import { getUserAccess, isOrgAdminRole, isSuperAdminRole } from "@/lib/access";
 
 interface Property {
   id: string;
@@ -52,7 +54,122 @@ interface Property {
   approval_status: string;
   submitted_by: string | null;
   rejection_reason: string | null;
+  qr_token?: string | null;
 }
+
+const PROPERTY_SELECT_WITH_PRIVATE_FIELDS = `
+  id,
+  org_id,
+  name,
+  property_type,
+  address,
+  street_number,
+  street_name,
+  building_name,
+  apartment_number,
+  floor,
+  postal_code,
+  city,
+  region,
+  country,
+  access_code,
+  entry_instructions,
+  bedrooms,
+  bathrooms,
+  max_guests,
+  listing_platforms,
+  categories,
+  status,
+  notes,
+  approval_status,
+  submitted_by,
+  rejection_reason,
+  qr_token
+`;
+
+const PROPERTY_SELECT_WITHOUT_PRIVATE_FIELDS = `
+  id,
+  org_id,
+  name,
+  property_type,
+  address,
+  street_number,
+  street_name,
+  building_name,
+  apartment_number,
+  floor,
+  postal_code,
+  city,
+  region,
+  country,
+  bedrooms,
+  bathrooms,
+  max_guests,
+  listing_platforms,
+  categories,
+  status,
+  notes,
+  approval_status,
+  submitted_by,
+  rejection_reason,
+  qr_token
+`;
+
+const PROPERTY_SELECT_LEGACY_FIELDS = `
+  id,
+  org_id,
+  name,
+  address,
+  city,
+  country,
+  bedrooms,
+  bathrooms,
+  status
+`;
+
+const hasMissingPropertyPrivateFields = (error: { message?: string } | null) => {
+  const message = error?.message?.toLowerCase() ?? "";
+  return message.includes("access_code") || message.includes("entry_instructions");
+};
+
+const extractMissingPropertyColumn = (error: { message?: string } | null) => {
+  const message = error?.message ?? "";
+  const schemaCacheMatch = message.match(/'([^']+)' column of 'properties'/i);
+  if (schemaCacheMatch?.[1]) return schemaCacheMatch[1];
+
+  const postgresMatch = message.match(/column properties\.([a-z_]+)/i);
+  return postgresMatch?.[1] ?? null;
+};
+
+const omitPrivatePropertyFields = <T extends Record<string, unknown>>(payload: T) => {
+  const { access_code: _accessCode, entry_instructions: _entryInstructions, ...rest } = payload;
+  return rest;
+};
+
+const omitPropertyColumn = <T extends Record<string, unknown>>(payload: T, column: string) => {
+  const { [column]: _omitted, ...rest } = payload;
+  return rest;
+};
+
+const LEGACY_PROPERTY_WRITE_FIELDS = [
+  "name",
+  "address",
+  "city",
+  "country",
+  "bedrooms",
+  "bathrooms",
+  "max_guests",
+  "org_id",
+  "submitted_by",
+] as const;
+
+const toLegacyPropertyPayload = (payload: Record<string, unknown>) =>
+  Object.fromEntries(
+    Object.entries(payload).filter(([key, value]) =>
+      LEGACY_PROPERTY_WRITE_FIELDS.includes(key as (typeof LEGACY_PROPERTY_WRITE_FIELDS)[number]) &&
+      value !== undefined,
+    ),
+  );
 
 const propertySchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -109,6 +226,12 @@ const emptyForm = {
   notes: "", platforms: [] as string[], categories: [] as string[],
 };
 
+// Module-level memo of which property columns the live schema is missing.
+// Populated lazily on the first fetchProperties() call; reused across mounts
+// so we don't re-do the strip-and-retry discovery loop on every navigation.
+const discoveredMissingPropertyFields = new Set<string>();
+let propertySchemaProbed = false;
+
 const buildAddress = (p: Partial<Property>) => {
   const line1 = [p.street_number, p.street_name].filter(Boolean).join(" ");
   const detail = [
@@ -128,12 +251,17 @@ const Properties = () => {
   const [editing, setEditing] = useState<Property | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [icalProperty, setIcalProperty] = useState<Property | null>(null);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [canApprove, setCanApprove] = useState(false);
   const [canManageAll, setCanManageAll] = useState(false);
+  const [canCreateProperties, setCanCreateProperties] = useState(false);
+  const [adminNeedsOrg, setAdminNeedsOrg] = useState(false);
   const [orgId, setOrgId] = useState<string | null>(null);
   const [rejectFor, setRejectFor] = useState<Property | null>(null);
   const [historyFor, setHistoryFor] = useState<Property | null>(null);
@@ -142,78 +270,343 @@ const Properties = () => {
   const [cohosts, setCohosts] = useState<{ id: string; full_name: string | null }[]>([]);
   const [propertyCohosts, setPropertyCohosts] = useState<Record<string, string | null>>({});
   const [savingCohost, setSavingCohost] = useState<string | null>(null);
+  const [supportsPrivateFields, setSupportsPrivateFields] = useState(true);
+
+  const fetchProperties = async () => {
+    // Some deployments are missing columns this UI uses (e.g. `status`,
+    // `property_type`, `access_code`, ...). Rather than maintaining N fallback
+    // SELECTs we start with the full list and dynamically strip whichever
+    // column the schema cache rejects, retrying until success.
+    //
+    // Perf: the *first* page load on a deployment with N missing columns used
+    // to cost N+1 sequential roundtrips just to discover the right column set,
+    // and *every* navigation back to /properties paid the full cost again.
+    // We now memoize the discovered set in module scope (see
+    // `discoveredMissingPropertyFields` at the top of this file) so subsequent
+    // mounts start from the validated list — usually one roundtrip total.
+    const ALL_FIELDS = [
+      "id",
+      "org_id",
+      "name",
+      "property_type",
+      "address",
+      "street_number",
+      "street_name",
+      "building_name",
+      "apartment_number",
+      "floor",
+      "postal_code",
+      "city",
+      "region",
+      "country",
+      "access_code",
+      "entry_instructions",
+      "bedrooms",
+      "bathrooms",
+      "max_guests",
+      "listing_platforms",
+      "categories",
+      "status",
+      "active",
+      "notes",
+      "approval_status",
+      "submitted_by",
+      "rejection_reason",
+      "qr_token",
+    ];
+
+    const PRIVATE_FIELDS = new Set(["access_code", "entry_instructions"]);
+    const DEFAULTS: Record<string, unknown> = {
+      property_type: "apartment",
+      street_number: null,
+      street_name: null,
+      building_name: null,
+      apartment_number: null,
+      floor: null,
+      postal_code: null,
+      region: null,
+      access_code: null,
+      entry_instructions: null,
+      max_guests: null,
+      listing_platforms: null,
+      categories: null,
+      status: "active",
+      active: true,
+      approval_status: "approved",
+      submitted_by: null,
+      rejection_reason: null,
+      qr_token: null,
+      notes: null,
+    };
+
+    // Seed `missing` from the module-level memo so we don't re-discover the
+    // same set of absent columns on every page mount.
+    const missing = new Set<string>(discoveredMissingPropertyFields);
+    let fields = ALL_FIELDS.filter((f) => !missing.has(f));
+
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      const result = await supabase
+        .from("properties")
+        .select(fields.join(", "))
+        .order("created_at", { ascending: false });
+
+      if (!result.error) {
+        const lostPrivateField = Array.from(missing).some((f) => PRIVATE_FIELDS.has(f));
+        setSupportsPrivateFields(!lostPrivateField);
+        // Persist the discovered set so subsequent mounts skip the probe.
+        if (!propertySchemaProbed) {
+          missing.forEach((f) => discoveredMissingPropertyFields.add(f));
+          propertySchemaProbed = true;
+        }
+
+        return (result.data ?? []).map((row: any) => {
+          const filled: Record<string, unknown> = { ...row };
+          // Derive `status` from `active` if it's the only one available.
+          if (missing.has("status") && !missing.has("active") && "active" in filled) {
+            filled.status = filled.active === false ? "inactive" : "active";
+          }
+          for (const f of missing) {
+            if (!(f in filled)) filled[f] = DEFAULTS[f] ?? null;
+          }
+          return filled;
+        }) as Property[];
+      }
+
+      const missingColumn = extractMissingPropertyColumn(result.error);
+      if (!missingColumn || !fields.includes(missingColumn)) {
+        throw result.error;
+      }
+      fields = fields.filter((f) => f !== missingColumn);
+      missing.add(missingColumn);
+      // Update the cache as we discover misses, so even a partial probe is
+      // useful if a transient error aborts later iterations.
+      discoveredMissingPropertyFields.add(missingColumn);
+    }
+
+    throw new Error("Could not reconcile property select with the current schema.");
+  };
+
+  const persistPropertyWithSchemaFallback = async (
+    initialPayload: Record<string, unknown>,
+    action: (payload: Record<string, unknown>) => Promise<{ error: { message?: string } | null }>,
+  ) => {
+    let payload = initialPayload;
+    let removedPrivateFields = false;
+    let attemptedLegacyPayload = false;
+
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const result = await action(payload);
+      if (!result.error) {
+        return { error: null, removedPrivateFields };
+      }
+
+      const missingColumn = extractMissingPropertyColumn(result.error);
+      if (!missingColumn || !(missingColumn in payload)) {
+        return { error: result.error, removedPrivateFields };
+      }
+
+       if (!attemptedLegacyPayload) {
+        const legacyPayload = toLegacyPropertyPayload(payload);
+        const removedKeys = Object.keys(payload).length - Object.keys(legacyPayload).length;
+        attemptedLegacyPayload = true;
+
+        if (removedKeys > 0) {
+          removedPrivateFields =
+            removedPrivateFields ||
+            "access_code" in payload ||
+            "entry_instructions" in payload;
+          payload = legacyPayload;
+          continue;
+        }
+      }
+
+      if (missingColumn === "access_code" || missingColumn === "entry_instructions") {
+        removedPrivateFields = true;
+      }
+
+      payload = omitPropertyColumn(payload, missingColumn);
+    }
+
+    return {
+      error: new Error("Could not reconcile the property payload with the current schema."),
+      removedPrivateFields,
+    };
+  };
 
   const load = async () => {
-    setLoading(true);
+    // Only show the page-wide spinner on the very first load. On subsequent
+    // mounts (e.g. after navigating away and back) we keep the existing cards
+    // visible and refresh in the background — feels instant.
+    setLoading((prevLoading) => prevLoading || items.length === 0);
+
     const { data: { user } } = await supabase.auth.getUser();
     setUserId(user?.id ?? null);
     if (!user) {
       setItems([]);
       setCanApprove(false);
       setCanManageAll(false);
+      setCanCreateProperties(false);
       setOrgId(null);
       setLoading(false);
       return;
     }
 
-    const access = await getUserAccess(user.id);
-    setCanApprove(access.isAdmin);
-    setCanManageAll(access.isAdmin);
-    setOrgId(access.orgId);
+    // ───── Phase 1 (parallel): everything needed to render the cards ─────
+    // - getUserAccess: profiles.role + property_cohosts presence
+    // - fetchProperties: the property list (with schema-discovery memoization)
+    //
+    // Independent of each other. Running both in parallel halves the latency
+    // of the critical path.
+    const [access, propsResult] = await Promise.all([
+      getUserAccess(user.id),
+      fetchProperties().catch((error: { message?: string }) => {
+        toast.error(error.message ?? t("common.error"));
+        return [] as Property[];
+      }),
+    ]);
+    const props = propsResult;
 
-    const { data, error } = await supabase.from("properties").select("*").order("created_at", { ascending: false });
-    if (error) toast.error(error.message);
-    const props = (data ?? []) as Property[];
-    
-    // Cohosts only work inside their assigned portfolio.
-    let visibleProps = props;
-    if (!access.isAdmin) {
-      const { data: cohosted } = await supabase.from("property_cohosts").select("property_id").eq("user_id", user.id);
-      const allowedIds = new Set((cohosted ?? []).map((c: any) => c.property_id));
-      visibleProps = props.filter(p => allowedIds.has(p.id));
-    }
-    setItems(visibleProps);
+    const canManageOrgProperties = access.isSuperAdmin || isOrgAdminRole(access.role);
+    setCanApprove(canManageOrgProperties);
+    setCanManageAll(canManageOrgProperties);
 
-    if (access.isAdmin && access.orgId) {
-      const { data: cohostProfiles } = await supabase
-        .from("profiles")
-        .select("id, full_name")
-        .eq("org_id", access.orgId)
-        .eq("role", "cohost");
-      setCohosts((cohostProfiles ?? []) as any);
+    // Visibility filter. Cohost case needs an extra query but the other two
+    // branches do not.
+    let visibleProps: Property[];
+    if (access.isSuperAdmin) {
+      visibleProps = props;
+    } else if (isOrgAdminRole(access.role)) {
+      visibleProps = props.filter(
+        (property) => property.submitted_by === user.id || property.submitted_by == null,
+      );
     } else {
-      setCohosts([]);
-    }
-    if (visibleProps.length) {
-      const { data: assignments } = await supabase
+      const { data: cohosted } = await supabase
         .from("property_cohosts")
-        .select("property_id, user_id")
-        .in("property_id", visibleProps.map((p) => p.id));
+        .select("property_id")
+        .eq("user_id", user.id);
+      const allowedIds = new Set((cohosted ?? []).map((c: { property_id: string }) => c.property_id));
+      visibleProps = props.filter((p) => allowedIds.has(p.id));
+    }
+
+    // Render the cards NOW, before chasing secondary metadata. Cohost picker
+    // and approval-history badges will populate in the background pass below.
+    setItems(visibleProps);
+    setLoading(false);
+
+    // ───── Phase 2 (parallel, non-blocking): fill in secondary metadata ─────
+    const visiblePropIds = visibleProps.map((p) => p.id);
+    const allPropIds = props.map((p) => p.id);
+
+    const cohostsPromise: Promise<{ id: string; full_name: string | null }[]> = (async () => {
+      if (visibleProps.length === 0) return [];
+      if (access.isSuperAdmin) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("id, full_name")
+          .eq("role", "cohost");
+        return (data ?? []) as { id: string; full_name: string | null }[];
+      }
+      if (isOrgAdminRole(access.role) && access.orgId) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("id, full_name")
+          .eq("org_id", access.orgId)
+          .eq("role", "cohost");
+        return (data ?? []) as { id: string; full_name: string | null }[];
+      }
+      return [];
+    })();
+
+    type Assignment = { property_id: string; user_id: string };
+    type ApprovalEvent = {
+      property_id: string;
+      event: string;
+      actor_id: string | null;
+      reason: string | null;
+      created_at: string;
+    };
+
+    // Hoist the supabase builders into untyped locals so the chained generic
+    // inference doesn't blow past TS's recursion limit on tables not in
+    // types.ts (property_approval_events, in particular).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sb = supabase as any;
+
+    const assignmentsPromise: Promise<{ data: Assignment[] | null }> =
+      visiblePropIds.length
+        ? sb
+            .from("property_cohosts")
+            .select("property_id, user_id")
+            .in("property_id", visiblePropIds)
+        : Promise.resolve({ data: [] });
+
+    const eventsPromise: Promise<{ data: ApprovalEvent[] | null }> =
+      allPropIds.length
+        ? sb
+            .from("property_approval_events")
+            .select("property_id, event, actor_id, reason, created_at")
+            .in("property_id", allPropIds)
+            .order("created_at", { ascending: false })
+        : Promise.resolve({ data: [] });
+
+    // Wait for the 3 independent queries in one trip.
+    const [cohostList, assignmentsResult, eventsResult] = await Promise.all([
+      cohostsPromise,
+      assignmentsPromise,
+      eventsPromise,
+    ]);
+    setCohosts(cohostList);
+
+    if (visibleProps.length) {
       const map: Record<string, string | null> = {};
-      visibleProps.forEach((p) => { map[p.id] = null; });
-      (assignments ?? []).forEach((a: any) => { map[a.property_id] = a.user_id; });
+      visibleProps.forEach((p) => {
+        map[p.id] = null;
+      });
+      const assignments = (assignmentsResult.data ?? []) as Array<{
+        property_id: string;
+        user_id: string;
+      }>;
+      assignments.forEach((a) => {
+        map[a.property_id] = a.user_id;
+      });
       setPropertyCohosts(map);
     }
-    if (props.length) {
-      const { data: events } = await supabase
-        .from("property_approval_events")
-        .select("property_id, event, actor_id, reason, created_at")
-        .in("property_id", props.map((p) => p.id))
-        .order("created_at", { ascending: false });
 
-      const latestByProp = new Map<string, any>();
-      (events ?? []).forEach((e: any) => {
+    if (allPropIds.length) {
+      const events = (eventsResult.data ?? []) as Array<{
+        property_id: string;
+        event: string;
+        actor_id: string | null;
+        reason: string | null;
+        created_at: string;
+      }>;
+      const latestByProp = new Map<string, (typeof events)[number]>();
+      events.forEach((e) => {
         if (!latestByProp.has(e.property_id)) latestByProp.set(e.property_id, e);
       });
 
-      const actorIds = Array.from(new Set(Array.from(latestByProp.values()).map((e) => e.actor_id).filter(Boolean)));
+      const actorIds = Array.from(
+        new Set(
+          Array.from(latestByProp.values())
+            .map((e) => e.actor_id)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
       const nameMap = new Map<string, string | null>();
       if (actorIds.length) {
-        const { data: profiles } = await supabase.from("profiles").select("id, full_name").in("id", actorIds);
-        (profiles ?? []).forEach((p: any) => nameMap.set(p.id, p.full_name));
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("id, full_name")
+          .in("id", actorIds);
+        (profiles ?? []).forEach((p: { id: string; full_name: string | null }) =>
+          nameMap.set(p.id, p.full_name),
+        );
       }
 
-      const summary: Record<string, any> = {};
+      const summary: Record<
+        string,
+        { event: string; created_at: string; actor_name: string | null; reason: string | null }
+      > = {};
       latestByProp.forEach((e, propId) => {
         summary[propId] = {
           event: e.event,
@@ -225,7 +618,42 @@ const Properties = () => {
       setLastEvents(summary);
     }
 
-    setLoading(false);
+    // ───── Phase 3 (best-effort, blocks nothing visible): admin-org fallback
+    //
+    // Rules:
+    //  - If profile.org_id is set, use it. This is the user's real org.
+    //  - If empty AND user is admin/co_admin: look up pending_org_id (their
+    //    accepted-but-not-yet-applied invite). We do NOT silently fall back
+    //    to "first org in DB" for regular admins anymore — that would put
+    //    them on someone else's data without their knowledge. The
+    //    InvitationBanner / setAdminNeedsOrg state is what nudges them.
+    //  - Super-admins are global and org-less by design; we still pick the
+    //    oldest org as a default workbench so their create dialog has a
+    //    sensible target. They're the only role that can legitimately
+    //    operate across orgs.
+    let effectiveOrgId = access.orgId;
+    if (!effectiveOrgId && canManageOrgProperties) {
+      const { data: pendingProfile } = await supabase
+        .from("profiles")
+        .select("pending_org_id")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (pendingProfile?.pending_org_id) {
+        effectiveOrgId = pendingProfile.pending_org_id;
+      } else if (access.isSuperAdmin) {
+        const { data: firstOrg } = await supabase
+          .from("organizations")
+          .select("id")
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (firstOrg?.id) effectiveOrgId = firstOrg.id;
+      }
+    }
+    const orgRequiredButMissing = isOrgAdminRole(access.role) && !effectiveOrgId;
+    setAdminNeedsOrg(orgRequiredButMissing);
+    setCanCreateProperties(canManageOrgProperties || access.isCohost);
+    setOrgId(effectiveOrgId);
   };
 
   useEffect(() => { load(); }, []);
@@ -329,20 +757,66 @@ const Properties = () => {
       listing_platforms: form.platforms,
       categories: form.categories,
     };
+    const payloadForWrite = supportsPrivateFields ? payload : omitPrivatePropertyFields(payload);
 
     if (editing) {
-      const { error } = await supabase.from("properties").update(payload).eq("id", editing.id);
+      const { error, removedPrivateFields } = await persistPropertyWithSchemaFallback(
+        payloadForWrite,
+        async (nextPayload) =>
+          supabase.from("properties").update(nextPayload as any).eq("id", editing.id),
+      );
+      if (removedPrivateFields) {
+        setSupportsPrivateFields(false);
+      }
       if (error) return toast.error(error.message);
       toast.success(t("properties.updated"));
     } else {
-      if (!orgId || !userId) return toast.error("No organization found for your user");
+      if (!userId) return toast.error("No authenticated user");
 
-      const { error } = await supabase.from("properties").insert([{
-        ...payload,
-        name: parsed.data.name,
-        org_id: orgId,
-        submitted_by: userId,
-      }]);
+      // Resolve the write-target org with explicit, predictable rules so the
+      // user never accidentally creates a property under someone else's org:
+      //
+      //   1. Use profile.org_id (the user's *real* organization). Re-fetch
+      //      fresh from the DB to handle the case where the user just got
+      //      invited or moved orgs since load() ran.
+      //   2. If still missing AND the user is a super-admin (global,
+      //      org-less by design), use the in-memory orgId picked during
+      //      load() — which already surfaces a notice. We DO NOT silently
+      //      pick "first org by created_at" for non-super-admins anymore.
+      //   3. Otherwise abort with a clear error pointing the user at the
+      //      invitation banner.
+      let writeOrgId: string | null = null;
+      const { data: freshProfile } = await supabase
+        .from("profiles")
+        .select("org_id, role")
+        .eq("id", userId)
+        .maybeSingle();
+      if (freshProfile?.org_id) {
+        writeOrgId = freshProfile.org_id as string;
+      } else if (isSuperAdminRole(freshProfile?.role as string | null)) {
+        writeOrgId = orgId; // super-admin's currently-selected org
+      }
+      if (!writeOrgId) {
+        return toast.error(
+          t("properties.noOrgForUser", {
+            defaultValue:
+              "Vous n’êtes rattaché à aucune organisation. Acceptez votre invitation pour pouvoir créer une propriété.",
+          }),
+        );
+      }
+
+      const { error, removedPrivateFields } = await persistPropertyWithSchemaFallback(
+        {
+          ...payloadForWrite,
+          name: parsed.data.name,
+          org_id: writeOrgId,
+          submitted_by: userId,
+        },
+        async (nextPayload) => supabase.from("properties").insert([nextPayload] as any),
+      );
+      if (removedPrivateFields) {
+        setSupportsPrivateFields(false);
+      }
       if (error) return toast.error(error.message);
       toast.success(t("properties.created"));
     }
@@ -352,11 +826,60 @@ const Properties = () => {
 
   const confirmDelete = async () => {
     if (!deleteId) return;
-    const { error } = await supabase.from("properties").delete().eq("id", deleteId);
-    if (error) toast.error(error.message);
-    else toast.success(t("properties.deleted"));
+    const id = deleteId;
+    // Optimistic: drop the card from the list immediately. Avoids the full
+    // load() roundtrip (auth + access + properties + cohost assignments +
+    // approval events + profiles) that used to spin the Loading state.
+    setItems((prev) => prev.filter((p) => p.id !== id));
+    setSelectedIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
     setDeleteId(null);
-    load();
+    const { error } = await supabase.from("properties").delete().eq("id", id);
+    if (error) {
+      toast.error(error.message);
+      // Rollback by revalidating; the failed delete almost always means RLS.
+      load();
+      return;
+    }
+    toast.success(t("properties.deleted"));
+  };
+
+  const confirmBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    setBulkDeleting(true);
+    // Optimistic prune.
+    setItems((prev) => prev.filter((p) => !selectedIds.has(p.id)));
+    const { error } = await supabase.from("properties").delete().in("id", ids);
+    setBulkDeleting(false);
+    setBulkConfirmOpen(false);
+    setSelectedIds(new Set());
+    if (error) {
+      toast.error(error.message);
+      load(); // resync
+      return;
+    }
+    toast.success(t("properties.bulkDeleted", { count: ids.length, defaultValue: `${ids.length} supprimées` }));
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const selectAllVisible = () => {
+    if (!canManageAll) return;
+    setSelectedIds(new Set(items.map((p) => p.id)));
   };
 
   const approveProperty = async (p: Property) => {
@@ -392,16 +915,32 @@ const Properties = () => {
         .eq("property_id", p.id);
       if (delErr) throw delErr;
 
+      const { error: delMemberErr } = await supabase
+        .from("property_members")
+        .delete()
+        .eq("property_id", p.id)
+        .eq("role", "cohost");
+      if (delMemberErr) throw delMemberErr;
+
       if (newUserId) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error("Not authenticated");
-        const { error: insErr } = await supabase.from("property_cohosts").insert([{
+        const assignmentPayload = {
           property_id: p.id,
           user_id: newUserId,
           assigned_by: user.id,
           permissions: ["manage_properties", "manage_reservations", "manage_tasks", "manage_staff", "view_financials", "manage_settings"]
-        }]);
+        };
+        const { error: insErr } = await supabase.from("property_cohosts").insert([assignmentPayload]);
         if (insErr) throw insErr;
+        const { error: memberErr } = await supabase.from("property_members").insert([{
+          property_id: p.id,
+          user_id: newUserId,
+          organization_id: p.org_id,
+          role: "cohost",
+          assigned_by: user.id,
+        }]);
+        if (memberErr) throw memberErr;
       }
       setPropertyCohosts((m) => ({ ...m, [p.id]: newUserId }));
       toast.success(t("properties.cohostAssign.saved"));
@@ -416,11 +955,61 @@ const Properties = () => {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
+      {adminNeedsOrg && (
+        <Card className="border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          You need to be part of an organization to create properties. Ask a
+          super-admin to invite you, then accept the invitation from the banner
+          at the top of the page.
+        </Card>
+      )}
+      {canManageAll && selectedIds.size > 0 && (
+        <Card
+          className="sticky top-2 z-30 flex items-center justify-between gap-3 p-3 bg-primary text-primary-foreground shadow-card"
+          data-testid="property-bulk-bar"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="font-semibold" data-testid="property-bulk-count">
+              {selectedIds.size} {t("properties.bulk.selected", { defaultValue: "sélectionnée(s)" })}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-primary-foreground hover:bg-primary-foreground/10 h-8"
+              onClick={clearSelection}
+            >
+              {t("properties.bulk.clear", { defaultValue: "Effacer" })}
+            </Button>
+            {selectedIds.size < items.length && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-primary-foreground hover:bg-primary-foreground/10 h-8"
+                onClick={selectAllVisible}
+              >
+                {t("properties.bulk.selectAll", { defaultValue: "Tout sélectionner" })}
+              </Button>
+            )}
+          </div>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => setBulkConfirmOpen(true)}
+            disabled={bulkDeleting}
+            data-testid="property-bulk-delete-button"
+          >
+            <Trash2 className="h-4 w-4 mr-1.5" />
+            {t("properties.bulk.deleteN", {
+              count: selectedIds.size,
+              defaultValue: `Supprimer ${selectedIds.size}`,
+            })}
+          </Button>
+        </Card>
+      )}
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl md:text-3xl font-bold text-secondary">{t("properties.title")}</h1>
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild disabled={!canManageAll}>
-            <Button onClick={openNew} disabled={!canManageAll}>
+          <DialogTrigger asChild disabled={!canCreateProperties}>
+            <Button onClick={openNew} disabled={!canCreateProperties} data-testid="open-property-dialog">
               <Plus className="h-4 w-4 mr-2" />
               {t("properties.add")}
             </Button>
@@ -453,11 +1042,16 @@ const Properties = () => {
                 </div>
               </div>
             )}
-            <form onSubmit={save} className="space-y-4">
+            <form onSubmit={save} className="space-y-4" data-testid="property-form">
 
               <div className="space-y-1.5">
                 <Label>{t("properties.name")}</Label>
-                <Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                <Input
+                  required
+                  value={form.name}
+                  data-testid="property-name-input"
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
               </div>
 
               <div className="space-y-1.5">
@@ -490,7 +1084,11 @@ const Properties = () => {
                   </div>
                   <div className="space-y-1.5 col-span-2">
                     <Label className="text-xs">{t("properties.streetName")}</Label>
-                    <Input value={form.street_name} onChange={(e) => setForm({ ...form, street_name: e.target.value })} />
+                    <Input
+                      value={form.street_name}
+                      data-testid="property-street-name-input"
+                      onChange={(e) => setForm({ ...form, street_name: e.target.value })}
+                    />
                   </div>
                 </div>
                 <div className="space-y-1.5">
@@ -516,7 +1114,11 @@ const Properties = () => {
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">{t("properties.city")}</Label>
-                    <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+                    <Input
+                      value={form.city}
+                      data-testid="property-city-input"
+                      onChange={(e) => setForm({ ...form, city: e.target.value })}
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -526,19 +1128,33 @@ const Properties = () => {
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">{t("properties.country")}</Label>
-                    <Input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} />
+                    <Input
+                      value={form.country}
+                      data-testid="property-country-input"
+                      onChange={(e) => setForm({ ...form, country: e.target.value })}
+                    />
                   </div>
                 </div>
-                <div className="grid grid-cols-1 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">{t("properties.accessCode")}</Label>
-                    <Input value={form.access_code} onChange={(e) => setForm({ ...form, access_code: e.target.value })} />
+                {supportsPrivateFields ? (
+                  <div className="grid grid-cols-1 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">{t("properties.accessCode")}</Label>
+                      <Input
+                        value={form.access_code}
+                        data-testid="property-access-code-input"
+                        onChange={(e) => setForm({ ...form, access_code: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">{t("properties.entryInstructions")}</Label>
+                      <Textarea rows={2} value={form.entry_instructions} onChange={(e) => setForm({ ...form, entry_instructions: e.target.value })} />
+                    </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">{t("properties.entryInstructions")}</Label>
-                    <Textarea rows={2} value={form.entry_instructions} onChange={(e) => setForm({ ...form, entry_instructions: e.target.value })} />
+                ) : (
+                  <div className="rounded-md border border-dashed border-amber-400/50 bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
+                    {t("properties.privateFieldsUnavailable")}
                   </div>
-                </div>
+                )}
               </div>
 
               <div className="grid grid-cols-3 gap-3">
@@ -605,7 +1221,7 @@ const Properties = () => {
           <Home className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
           <h3 className="font-semibold text-secondary">{t("properties.empty")}</h3>
           <p className="text-sm text-muted-foreground mb-4">{t("properties.emptyHint")}</p>
-          {canManageAll && (
+          {canCreateProperties && (
             <Button onClick={openNew}>
               <Plus className="h-4 w-4 mr-2" />
               {t("properties.add")}
@@ -615,9 +1231,26 @@ const Properties = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {items.map((p) => (
-            <Card key={p.id} className="p-4 shadow-card hover:shadow-soft transition-shadow">
+            <Card
+              key={p.id}
+              className={cn(
+                "p-4 shadow-card hover:shadow-soft transition-shadow",
+                selectedIds.has(p.id) && "ring-2 ring-primary",
+              )}
+              data-testid="property-card"
+              data-selected={selectedIds.has(p.id) ? "true" : "false"}
+            >
               <div className="flex items-start justify-between gap-2 mb-2">
-                <div className="min-w-0">
+                {canManageAll && (
+                  <Checkbox
+                    checked={selectedIds.has(p.id)}
+                    onCheckedChange={() => toggleSelect(p.id)}
+                    className="mt-1 shrink-0"
+                    aria-label={`Select ${p.name}`}
+                    data-testid="property-card-checkbox"
+                  />
+                )}
+                <div className="min-w-0 flex-1">
                   <h3 className="font-semibold text-secondary truncate">{p.name}</h3>
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
                     {t(`properties.types.${p.property_type ?? "apartment"}`)}
@@ -752,7 +1385,12 @@ const Properties = () => {
                   <PropertyQRCode propertyName={p.name} qrToken={(p as any).qr_token} />
                 )}
                 {canManageAll && (
-                  <Button variant="outline" size="sm" onClick={() => setDeleteId(p.id)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDeleteId(p.id)}
+                    aria-label={`${t("properties.delete")} ${p.name}`}
+                  >
                     <Trash2 className="h-3.5 w-3.5 text-destructive" />
                   </Button>
                 )}
@@ -771,6 +1409,40 @@ const Properties = () => {
           <AlertDialogFooter>
             <AlertDialogCancel>{t("properties.cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDelete}>{t("properties.delete")}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkConfirmOpen} onOpenChange={(o) => !o && !bulkDeleting && setBulkConfirmOpen(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("properties.bulk.confirmTitle", {
+                count: selectedIds.size,
+                defaultValue: `Supprimer ${selectedIds.size} propriété(s) ?`,
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("properties.bulk.confirmBody", {
+                defaultValue:
+                  "Cette action est irréversible. Toutes les données associées (réservations, tâches, livrets, etc.) seront perdues.",
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleting}>{t("properties.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmBulkDelete}
+              disabled={bulkDeleting}
+              data-testid="property-bulk-delete-confirm"
+            >
+              {bulkDeleting
+                ? t("properties.bulk.deleting", { defaultValue: "Suppression…" })
+                : t("properties.bulk.deleteN", {
+                    count: selectedIds.size,
+                    defaultValue: `Supprimer ${selectedIds.size}`,
+                  })}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

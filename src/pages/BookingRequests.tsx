@@ -40,13 +40,13 @@ const BookingRequests = () => {
 
   const load = async () => {
     if (!user) return;
-    const { data: prof } = await supabase.from("profiles").select("organization_id").eq("id", user.id).maybeSingle();
-    if (!prof?.organization_id) return;
-    setOrgId(prof.organization_id);
+    const { data: prof } = await supabase.from("profiles").select("org_id").eq("id", user.id).maybeSingle();
+    if (!prof?.org_id) return;
+    setOrgId(prof.org_id);
     const [{ data: o }, { data: r }, { data: p }] = await Promise.all([
-      supabase.from("organizations").select("*").eq("id", prof.organization_id).maybeSingle(),
-      supabase.from("booking_requests").select("*").eq("organization_id", prof.organization_id).order("created_at", { ascending: false }),
-      supabase.from("properties").select("id, name").eq("organization_id", prof.organization_id),
+      supabase.from("organizations").select("*").eq("id", prof.org_id).maybeSingle(),
+      supabase.from("booking_requests").select("*").eq("organization_id", prof.org_id).order("created_at", { ascending: false }),
+      supabase.from("properties").select("id, name").eq("org_id", prof.org_id),
     ]);
     setOrg(o);
     setRequests((r as any) || []);

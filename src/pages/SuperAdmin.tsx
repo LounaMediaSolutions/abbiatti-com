@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -7,18 +8,18 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
-import { Shield, Trash2, Pause, Play, Pencil, LogOut, Search, Receipt, Users, Plus } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Shield, Trash2, Pause, Play, Pencil, Search, Receipt, Users, Plus, Building2 } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Unauthorized } from "@/components/Unauthorized";
+import { isSuperAdminUser } from "@/lib/access";
 
 type Org = {
   id: string;
@@ -37,9 +38,11 @@ type OrgWithStats = Org & {
   property_count: number;
   cohost_count: number;
   employee_count: number;
+  admin_count: number;
 };
 
 export default function SuperAdmin() {
+  const { t } = useTranslation();
   const { user, loading } = useAuth();
   const [isSuper, setIsSuper] = useState<boolean | null>(null);
   const [orgs, setOrgs] = useState<OrgWithStats[]>([]);
@@ -50,6 +53,18 @@ export default function SuperAdmin() {
   const [editMaxCohosts, setEditMaxCohosts] = useState(1);
   const [editMaxEmployees, setEditMaxEmployees] = useState(2);
   const [editTrialEndsAt, setEditTrialEndsAt] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newColor, setNewColor] = useState("#1e40af");
+  const [newMaxCohosts, setNewMaxCohosts] = useState(1);
+  const [newMaxEmployees, setNewMaxEmployees] = useState(2);
+  const [newTrialDays, setNewTrialDays] = useState(14);
+  const [invitingOrg, setInvitingOrg] = useState<Org | null>(null);
+  const [inviteRole, setInviteRole] = useState<"cohost" | "admin">("cohost");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [invitePassword, setInvitePassword] = useState("");
+  const [inviteFullName, setInviteFullName] = useState("");
+  const [inviting, setInviting] = useState(false);
 
   useEffect(() => {
     if (loading) return;
@@ -60,19 +75,8 @@ export default function SuperAdmin() {
     let cancelled = false;
     (async () => {
       try {
-        const { data, error } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", user.id)
-          .eq("role", "super_admin")
-          .maybeSingle();
         if (cancelled) return;
-        if (error) {
-          console.error("[SuperAdmin] role check failed:", error);
-          setIsSuper(false);
-          return;
-        }
-        setIsSuper(!!data);
+        setIsSuper(await isSuperAdminUser(user.id));
       } catch (e) {
         if (cancelled) return;
         console.error("[SuperAdmin] role check threw:", e);
@@ -82,16 +86,46 @@ export default function SuperAdmin() {
     return () => { cancelled = true; };
   }, [user?.id, loading]);
 
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newColor, setNewColor] = useState("#1e40af");
-  const [newMaxCohosts, setNewMaxCohosts] = useState(1);
-  const [newMaxEmployees, setNewMaxEmployees] = useState(2);
-  const [newTrialDays, setNewTrialDays] = useState(14);
+  const loadOrgs = async () => {
+    const { data: orgsData, error } = await supabase
+      .from("organizations")
+      .select("id, name, brand_color, logo_url, suspended, created_at, max_cohosts, max_employees, trial_ends_at")
+      .order("created_at", { ascending: false });
+    if (error) {
+      toast({ title: t("common.error"), description: error.message, variant: "destructive" });
+      return;
+    }
+    const ids = (orgsData ?? []).map((o) => o.id);
+    // profiles.role is the source of truth in this deployment; user_roles may
+    // not exist. Read roles from profiles so the filter below works on both
+    // schemas.
+    const [{ data: profileRoles }, { data: props }] = await Promise.all([
+      supabase.from("profiles").select("org_id, role").in("org_id", ids),
+      supabase.from("properties").select("org_id").in("org_id", ids),
+    ]);
+    const employeeRoles = ["cleaner", "driver", "decorator", "maintenance", "staff"];
+    const adminRoles = ["admin", "co_admin"];
+    const enriched: OrgWithStats[] = (orgsData ?? []).map((o) => {
+      const orgRoles = (profileRoles ?? []).filter((r: any) => r.org_id === o.id);
+      return {
+        ...o,
+        member_count: orgRoles.length,
+        admin_count: orgRoles.filter((r: any) => adminRoles.includes(r.role)).length,
+        cohost_count: orgRoles.filter((r: any) => r.role === "cohost").length,
+        employee_count: orgRoles.filter((r: any) => employeeRoles.includes(r.role)).length,
+        property_count: (props ?? []).filter((p: any) => p.org_id === o.id).length,
+      };
+    });
+    setOrgs(enriched);
+  };
+
+  useEffect(() => {
+    if (isSuper) loadOrgs();
+  }, [isSuper]);
 
   const createOrg = async () => {
     if (!newName.trim()) {
-      return toast({ title: "Nom requis", variant: "destructive" });
+      return toast({ title: t("superAdmin.requiredName"), variant: "destructive" });
     }
     const trialEnd = new Date();
     trialEnd.setDate(trialEnd.getDate() + (newTrialDays || 14));
@@ -103,9 +137,9 @@ export default function SuperAdmin() {
       trial_ends_at: trialEnd.toISOString(),
     });
     if (error) {
-      return toast({ title: "Erreur", description: error.message, variant: "destructive" });
+      return toast({ title: t("common.error"), description: error.message, variant: "destructive" });
     }
-    toast({ title: "Agence créée" });
+    toast({ title: t("superAdmin.agencyCreated") });
     setCreating(false);
     setNewName("");
     setNewColor("#1e40af");
@@ -115,58 +149,20 @@ export default function SuperAdmin() {
     loadOrgs();
   };
 
-  const loadOrgs = async () => {
-    const { data: orgsData, error } = await supabase
-      .from("organizations")
-      .select("id, name, brand_color, logo_url, suspended, created_at, max_cohosts, max_employees, trial_ends_at")
-      .order("created_at", { ascending: false });
-    if (error) {
-      toast({ title: "Erreur", description: error.message, variant: "destructive" });
-      return;
-    }
-    const ids = (orgsData ?? []).map((o) => o.id);
-    const [{ data: roles }, { data: props }] = await Promise.all([
-      supabase.from("user_roles").select("organization_id, role").in("organization_id", ids),
-      supabase.from("properties").select("organization_id").in("organization_id", ids),
-    ]);
-    const employeeRoles = ["cleaner", "driver", "decorator", "maintenance", "staff"];
-    const enriched: OrgWithStats[] = (orgsData ?? []).map((o) => {
-      const orgRoles = (roles ?? []).filter((r: any) => r.organization_id === o.id);
-      return {
-        ...o,
-        member_count: orgRoles.length,
-        cohost_count: orgRoles.filter((r: any) => r.role === "cohost").length,
-        employee_count: orgRoles.filter((r: any) => employeeRoles.includes(r.role)).length,
-        property_count: (props ?? []).filter((p: any) => p.organization_id === o.id).length,
-      };
-    });
-    setOrgs(enriched);
-  };
-
-  useEffect(() => {
-    if (isSuper) loadOrgs();
-  }, [isSuper]);
-
-  if (loading || isSuper === null) {
-    return <div className="flex min-h-screen items-center justify-center text-slate-300">Chargement…</div>;
-  }
-  if (!user) return <Navigate to="/auth" replace />;
-  if (!isSuper) return <Unauthorized />;
-
   const toggleSuspend = async (org: OrgWithStats) => {
     const { error } = await supabase
       .from("organizations")
       .update({ suspended: !org.suspended })
       .eq("id", org.id);
-    if (error) return toast({ title: "Erreur", description: error.message, variant: "destructive" });
-    toast({ title: org.suspended ? "Agence réactivée" : "Agence suspendue" });
+    if (error) return toast({ title: t("common.error"), description: error.message, variant: "destructive" });
+    toast({ title: org.suspended ? t("superAdmin.agencyReactivated") : t("superAdmin.agencySuspended") });
     loadOrgs();
   };
 
   const deleteOrg = async (org: OrgWithStats) => {
     const { error } = await supabase.from("organizations").delete().eq("id", org.id);
-    if (error) return toast({ title: "Erreur", description: error.message, variant: "destructive" });
-    toast({ title: "Agence supprimée" });
+    if (error) return toast({ title: t("common.error"), description: error.message, variant: "destructive" });
+    toast({ title: t("superAdmin.agencyDeleted") });
     loadOrgs();
   };
 
@@ -191,10 +187,60 @@ export default function SuperAdmin() {
         trial_ends_at: editTrialEndsAt ? new Date(editTrialEndsAt).toISOString() : null,
       })
       .eq("id", editing.id);
-    if (error) return toast({ title: "Erreur", description: error.message, variant: "destructive" });
-    toast({ title: "Agence mise à jour" });
+    if (error) return toast({ title: t("common.error"), description: error.message, variant: "destructive" });
+    toast({ title: t("superAdmin.agencyUpdated") });
     setEditing(null);
     loadOrgs();
+  };
+
+  const openInvite = (org: Org, role: "cohost" | "admin" = "cohost") => {
+    setInvitingOrg(org);
+    setInviteRole(role);
+    setInviteEmail("");
+    setInvitePassword("");
+    setInviteFullName("");
+  };
+
+  const sendInvite = async () => {
+    if (!invitingOrg) return;
+    if (!inviteEmail.trim()) {
+      return toast({ title: t("common.error"), description: "Email is required", variant: "destructive" });
+    }
+    setInviting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-team-member", {
+        body: {
+          email: inviteEmail.trim(),
+          // Password is only sent when provided. The edge function requires it
+          // for brand-new accounts but skips it when the email already belongs
+          // to an existing user.
+          password: invitePassword.trim() ? invitePassword : undefined,
+          full_name: inviteFullName.trim(),
+          role: inviteRole,
+          target_org_id: invitingOrg.id,
+        },
+      });
+      if (error) {
+        toast({ title: t("common.error"), description: error.message, variant: "destructive" });
+        return;
+      }
+      const reusedExisting = (data as { existing_user?: boolean } | null)?.existing_user;
+      toast({
+        title: inviteRole === "admin" ? "Admin invited" : "Cohost invited",
+        description:
+          inviteRole === "admin"
+            ? reusedExisting
+              ? `${inviteEmail} already has an account — they must accept the invitation to manage ${invitingOrg.name}`
+              : `${inviteEmail} must accept the invitation to join ${invitingOrg.name}`
+            : reusedExisting
+              ? `${inviteEmail} (existing user) added to ${invitingOrg.name}`
+              : `${inviteEmail} added to ${invitingOrg.name}`,
+      });
+      setInvitingOrg(null);
+      loadOrgs();
+    } finally {
+      setInviting(false);
+    }
   };
 
   const extendTrial = async (org: OrgWithStats, days: number) => {
@@ -204,93 +250,130 @@ export default function SuperAdmin() {
       .from("organizations")
       .update({ trial_ends_at: base.toISOString() })
       .eq("id", org.id);
-    if (error) return toast({ title: "Erreur", description: error.message, variant: "destructive" });
-    toast({ title: `Essai prolongé de ${days} jours` });
+    if (error) return toast({ title: t("common.error"), description: error.message, variant: "destructive" });
+    toast({ title: t("superAdmin.trialExtended", { days }) });
     loadOrgs();
   };
+
+  if (loading || isSuper === null) {
+    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">{t("common.loading")}</div>;
+  }
+  if (!user) return <Navigate to="/auth" replace />;
+  if (!isSuper) return <Unauthorized />;
 
   const filtered = orgs.filter((o) =>
     o.name.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100">
-      <div className="border-b border-slate-800 bg-slate-900/60 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-rose-600">
-              <Shield className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold">Super Admin</h1>
-              <p className="text-xs text-slate-400">Gestion de toutes les agences</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => setCreating(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-              <Plus className="mr-2 h-4 w-4" /> Nouvelle agence
+    <div className="mx-auto max-w-6xl space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold text-secondary">{t("superAdmin.title")}</h1>
+          <p className="text-sm text-muted-foreground">
+            {t("superAdmin.subtitle")}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            onClick={() => setCreating(true)}
+            data-testid="superadmin-new-agency-button"
+          >
+            <Plus className="mr-2 h-4 w-4" /> {t("superAdmin.newAgency")}
+          </Button>
+          <Link to="/super-admin/profiles">
+            <Button size="sm" variant="outline">
+              <Users className="mr-2 h-4 w-4" /> {t("nav.profiles")}
             </Button>
-            <Link to="/super-admin/staff">
-              <Button size="sm" variant="outline" className="border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700">
-                <Users className="mr-2 h-4 w-4" /> Équipe plateforme
-              </Button>
-            </Link>
-            <Link to="/super-admin/billing">
-              <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white">
-                <Receipt className="mr-2 h-4 w-4" /> Facturation
-              </Button>
-            </Link>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => supabase.auth.signOut()}
-              className="text-slate-300 hover:text-white"
-            >
-              <LogOut className="mr-2 h-4 w-4" /> Déconnexion
+          </Link>
+          <Link to="/super-admin/billing">
+            <Button size="sm" variant="outline">
+              <Receipt className="mr-2 h-4 w-4" /> {t("superAdmin.billing")}
             </Button>
-          </div>
+          </Link>
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl px-6 py-8">
-        <div className="mb-6 grid gap-4 md:grid-cols-3">
-          <Card className="border-slate-800 bg-slate-900/50 p-4">
-            <p className="text-xs uppercase text-slate-400">Total agences</p>
-            <p className="mt-1 text-2xl font-bold">{orgs.length}</p>
-          </Card>
-          <Card className="border-slate-800 bg-slate-900/50 p-4">
-            <p className="text-xs uppercase text-slate-400">Actives</p>
-            <p className="mt-1 text-2xl font-bold text-emerald-400">
-              {orgs.filter((o) => !o.suspended).length}
-            </p>
-          </Card>
-          <Card className="border-slate-800 bg-slate-900/50 p-4">
-            <p className="text-xs uppercase text-slate-400">Suspendues</p>
-            <p className="mt-1 text-2xl font-bold text-amber-400">
-              {orgs.filter((o) => o.suspended).length}
-            </p>
-          </Card>
-        </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="p-4 shadow-card">
+          <p className="text-xs uppercase text-muted-foreground">{t("superAdmin.stats.totalAgencies")}</p>
+          <p className="mt-1 text-2xl font-bold text-secondary">{orgs.length}</p>
+        </Card>
+        <Card className="p-4 shadow-card">
+          <p className="text-xs uppercase text-muted-foreground">{t("superAdmin.stats.active")}</p>
+          <p className="mt-1 text-2xl font-bold text-emerald-600">
+            {orgs.filter((o) => !o.suspended).length}
+          </p>
+        </Card>
+        <Card className="p-4 shadow-card">
+          <p className="text-xs uppercase text-muted-foreground">{t("superAdmin.stats.suspended")}</p>
+          <p className="mt-1 text-2xl font-bold text-amber-600">
+            {orgs.filter((o) => o.suspended).length}
+          </p>
+        </Card>
+      </div>
 
-        <div className="mb-4 flex items-center gap-2">
-          <div className="relative flex-1 max-w-md">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card className="p-5 shadow-card">
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg bg-primary/10 p-2 text-primary">
+              <Building2 className="h-5 w-5" />
+            </div>
+            <div className="space-y-1">
+              <h2 className="font-semibold text-secondary">{t("superAdmin.cards.samePortalTitle")}</h2>
+              <p className="text-sm text-muted-foreground">
+                {t("superAdmin.cards.samePortalBody")}
+              </p>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-5 shadow-card">
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg bg-primary/10 p-2 text-primary">
+              <Shield className="h-5 w-5" />
+            </div>
+            <div className="space-y-1">
+              <h2 className="font-semibold text-secondary">{t("superAdmin.cards.extraSectionsTitle")}</h2>
+              <p className="text-sm text-muted-foreground">
+                {t("superAdmin.cards.extraSectionsBody")}
+              </p>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <Card className="shadow-card">
+        <div className="space-y-4 p-4">
+          <div className="relative max-w-md">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Rechercher une agence…"
+              placeholder={t("superAdmin.searchPlaceholder")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="border-slate-700 bg-slate-900/50 pl-9 text-slate-100 placeholder:text-slate-500"
+              className="pl-9"
             />
           </div>
-        </div>
-
-        <Card className="border-slate-800 bg-slate-900/50">
-          <div className="divide-y divide-slate-800">
+          <div className="divide-y">
             {filtered.length === 0 ? (
-              <div className="p-8 text-center text-slate-400">Aucune agence</div>
+              <div className="py-8 text-center text-muted-foreground">{t("superAdmin.empty")}</div>
             ) : (
               filtered.map((org) => (
-                <div key={org.id} className="flex flex-wrap items-center gap-4 p-4">
+                <div
+                  key={org.id}
+                  className="flex flex-wrap items-center gap-4 py-4"
+                  data-testid="org-row"
+                  data-org-id={org.id}
+                  data-org-name={org.name}
+                >
+                  {/* Hidden descendant so Playwright's filter({ has: [data-org-name=...] }) matches
+                      this row. `filter({ has })` only looks at descendants, not the row itself. */}
+                  <span
+                    data-org-name={org.name}
+                    data-org-id={org.id}
+                    className="sr-only"
+                    aria-hidden="true"
+                  />
                   <div
                     className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-sm font-bold text-white"
                     style={{ background: org.brand_color ?? "#475569" }}
@@ -301,28 +384,39 @@ export default function SuperAdmin() {
                       org.name.slice(0, 2).toUpperCase()
                     )}
                   </div>
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate font-semibold">{org.name}</p>
+                      <Link
+                        to={`/super-admin/orgs/${org.id}`}
+                        className="truncate font-semibold text-secondary hover:text-primary hover:underline"
+                      >
+                        {org.name}
+                      </Link>
                       {org.suspended && (
-                        <Badge variant="outline" className="border-amber-500 text-amber-400">
-                          Suspendue
+                        <Badge variant="outline" className="border-amber-500 text-amber-700">
+                          {t("superAdmin.suspendedBadge")}
                         </Badge>
                       )}
                       {(() => {
                         const days = Math.ceil(
                           (new Date(org.trial_ends_at).getTime() - Date.now()) / 86400000
                         );
-                        if (days < 0)
-                          return <Badge variant="outline" className="border-rose-500 text-rose-400">Essai expiré</Badge>;
-                        if (days <= 3)
-                          return <Badge variant="outline" className="border-amber-500 text-amber-400">Essai: {days}j</Badge>;
-                        return <Badge variant="outline" className="border-emerald-700 text-emerald-400">Essai: {days}j</Badge>;
+                        if (days < 0) return <Badge variant="destructive">{t("superAdmin.trialExpired")}</Badge>;
+                        if (days <= 3) {
+                          return <Badge variant="outline" className="border-amber-500 text-amber-700">{t("superAdmin.trialDays", { days })}</Badge>;
+                        }
+                        return <Badge variant="outline" className="border-emerald-500 text-emerald-700">{t("superAdmin.trialDays", { days })}</Badge>;
                       })()}
                     </div>
-                    <p className="text-xs text-slate-400">
-                      {org.cohost_count}/{org.max_cohosts} co-host · {org.employee_count}/{org.max_employees} employé(s) ·
-                      {" "}{org.property_count} propriété(s) · Créée le{" "}
+                    <p className="text-xs text-muted-foreground">
+                      {t("superAdmin.orgSummary", {
+                        cohosts: org.cohost_count,
+                        maxCohosts: org.max_cohosts,
+                        employees: org.employee_count,
+                        maxEmployees: org.max_employees,
+                        properties: org.property_count,
+                      })}{" · "}
+                      {t("superAdmin.createdOn")}{" "}
                       {new Date(org.created_at).toLocaleDateString("fr-FR")}
                     </p>
                   </div>
@@ -330,33 +424,21 @@ export default function SuperAdmin() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => extendTrial(org, 7)}
-                      className="border-emerald-800 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900"
+                      onClick={() => openInvite(org, "admin")}
+                      data-testid="org-invite-admin-button"
                     >
+                      <Shield className="mr-1 h-4 w-4" /> Invite admin
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => extendTrial(org, 7)}>
                       +7j
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => extendTrial(org, 30)}
-                      className="border-emerald-800 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900"
-                    >
+                    <Button size="sm" variant="outline" onClick={() => extendTrial(org, 30)}>
                       +30j
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => openEdit(org)}
-                      className="border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
-                    >
+                    <Button size="sm" variant="outline" onClick={() => openEdit(org)}>
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => toggleSuspend(org)}
-                      className="border-slate-700 bg-slate-800 text-amber-400 hover:bg-slate-700"
-                    >
+                    <Button size="sm" variant="outline" onClick={() => toggleSuspend(org)}>
                       {org.suspended ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
                     </Button>
                     <AlertDialog>
@@ -364,25 +446,27 @@ export default function SuperAdmin() {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="border-rose-900 bg-rose-950/50 text-rose-400 hover:bg-rose-900"
+                          className="text-destructive"
+                          data-testid="org-delete-trigger"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>Supprimer "{org.name}" ?</AlertDialogTitle>
+                          <AlertDialogTitle>{t("superAdmin.deleteTitle", { name: org.name })}</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Cette action est irréversible. Toutes les données liées seront supprimées.
+                            {t("superAdmin.deleteDescription")}
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
-                          <AlertDialogCancel>Annuler</AlertDialogCancel>
+                          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
                           <AlertDialogAction
                             onClick={() => deleteOrg(org)}
                             className="bg-rose-600 hover:bg-rose-700"
+                            data-testid="org-delete-confirm"
                           >
-                            Supprimer
+                            {t("common.delete")}
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
@@ -392,21 +476,26 @@ export default function SuperAdmin() {
               ))
             )}
           </div>
-        </Card>
-      </div>
+        </div>
+      </Card>
 
       <Dialog open={creating} onOpenChange={setCreating}>
-        <DialogContent>
+        <DialogContent data-testid="org-create-dialog">
           <DialogHeader>
-            <DialogTitle>Créer une agence</DialogTitle>
+            <DialogTitle>{t("superAdmin.createDialogTitle")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Nom *</Label>
-              <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Ex: Mon Agence" />
+              <Label>{t("superAdmin.nameLabel")} *</Label>
+              <Input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder={t("superAdmin.namePlaceholder")}
+                data-testid="org-create-name-input"
+              />
             </div>
             <div>
-              <Label>Couleur de marque</Label>
+              <Label>{t("superAdmin.brandColor")}</Label>
               <div className="flex gap-2">
                 <Input type="color" value={newColor} onChange={(e) => setNewColor(e.target.value)} className="h-10 w-20" />
                 <Input value={newColor} onChange={(e) => setNewColor(e.target.value)} />
@@ -414,25 +503,88 @@ export default function SuperAdmin() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Co-hosts max</Label>
+                <Label>{t("superAdmin.maxCohosts")}</Label>
                 <Input type="number" min={0} value={newMaxCohosts}
                   onChange={(e) => setNewMaxCohosts(parseInt(e.target.value) || 0)} />
               </div>
               <div>
-                <Label>Employés max</Label>
+                <Label>{t("superAdmin.maxEmployees")}</Label>
                 <Input type="number" min={0} value={newMaxEmployees}
                   onChange={(e) => setNewMaxEmployees(parseInt(e.target.value) || 0)} />
               </div>
             </div>
             <div>
-              <Label>Durée d'essai (jours)</Label>
+              <Label>{t("superAdmin.trialDuration")}</Label>
               <Input type="number" min={1} value={newTrialDays}
                 onChange={(e) => setNewTrialDays(parseInt(e.target.value) || 14)} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreating(false)}>Annuler</Button>
-            <Button onClick={createOrg} className="bg-emerald-600 hover:bg-emerald-700">Créer</Button>
+            <Button variant="outline" onClick={() => setCreating(false)}>{t("common.cancel")}</Button>
+            <Button onClick={createOrg} data-testid="org-create-submit">
+              {t("common.create")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!invitingOrg} onOpenChange={(o) => !o && setInvitingOrg(null)}>
+        <DialogContent data-testid="invite-dialog">
+          <DialogHeader>
+            <DialogTitle>
+              Invite admin{invitingOrg ? ` to ${invitingOrg.name}` : ""}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+              The admin will receive an in-app invitation on first login and
+              must <strong>accept</strong> before they can manage this organization.
+            </p>
+            <div>
+              <Label>Full name</Label>
+              <Input
+                value={inviteFullName}
+                onChange={(e) => setInviteFullName(e.target.value)}
+                placeholder="Jane Doe"
+                data-testid="invite-fullname-input"
+              />
+            </div>
+            <div>
+              <Label>Email *</Label>
+              <Input
+                type="email"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="admin@example.com"
+                data-testid="invite-email-input"
+              />
+            </div>
+            <div>
+              <Label>Temporary password</Label>
+              <Input
+                type="text"
+                value={invitePassword}
+                onChange={(e) => setInvitePassword(e.target.value)}
+                placeholder="Leave blank if user already has an account"
+                data-testid="invite-password-input"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Required only for brand-new accounts (min 6 characters). If the email already
+                belongs to a user, leave this blank — they'll keep their existing password.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInvitingOrg(null)} disabled={inviting}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              onClick={sendInvite}
+              disabled={inviting}
+              data-testid="invite-submit"
+            >
+              {inviting ? t("common.loading") : "Send invite"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -440,15 +592,15 @@ export default function SuperAdmin() {
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Éditer l'agence</DialogTitle>
+            <DialogTitle>{t("superAdmin.editDialogTitle")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Nom</Label>
+              <Label>{t("superAdmin.nameLabel")}</Label>
               <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
             </div>
             <div>
-              <Label>Couleur de marque</Label>
+              <Label>{t("superAdmin.brandColor")}</Label>
               <div className="flex gap-2">
                 <Input
                   type="color"
@@ -461,25 +613,25 @@ export default function SuperAdmin() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Co-hosts max</Label>
+                <Label>{t("superAdmin.maxCohosts")}</Label>
                 <Input type="number" min={0} value={editMaxCohosts}
                   onChange={(e) => setEditMaxCohosts(parseInt(e.target.value) || 0)} />
               </div>
               <div>
-                <Label>Employés max</Label>
+                <Label>{t("superAdmin.maxEmployees")}</Label>
                 <Input type="number" min={0} value={editMaxEmployees}
                   onChange={(e) => setEditMaxEmployees(parseInt(e.target.value) || 0)} />
               </div>
             </div>
             <div>
-              <Label>Fin d'essai (lecture seule après cette date)</Label>
+              <Label>{t("superAdmin.trialEnd")}</Label>
               <Input type="date" value={editTrialEndsAt}
                 onChange={(e) => setEditTrialEndsAt(e.target.value)} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditing(null)}>Annuler</Button>
-            <Button onClick={saveEdit}>Enregistrer</Button>
+            <Button variant="outline" onClick={() => setEditing(null)}>{t("common.cancel")}</Button>
+            <Button onClick={saveEdit}>{t("common.save")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

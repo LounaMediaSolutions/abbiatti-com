@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -54,23 +55,94 @@ export default function Availability() {
   const { data: properties = [] } = useQuery({
     queryKey: ["avail-properties"],
     queryFn: async () => {
-      const { data } = await supabase
+      // Previously: .eq("status", "active"). The live schema doesn't have a
+      // `status` column on properties (only `active: boolean`, see types.ts),
+      // so that filter errored silently and returned zero rows — which is why
+      // the page rendered empty. RLS already scopes the rows to the user's
+      // org + cohost assignments, so we just ask for everything visible and
+      // optionally narrow by `active=true` in JS once the rows arrive.
+      //
+      // Note: `properties` is in types.ts as `org_id`, but the live schema
+      // uses `organization_id` on this column (see Properties.tsx which
+      // hand-rolls the column probe). We cast through `unknown` to bridge.
+      const { data, error } = await supabase
         .from("properties")
-        .select("id, organization_id, name, city, country, property_type, max_guests, categories")
-        .eq("status", "active")
+        .select(
+          "id, organization_id, name, city, country, property_type, max_guests, categories, active",
+        )
         .order("name");
-      return (data ?? []) as Property[];
+      if (error) {
+        // Surface the failure instead of silently swallowing it. If the
+        // column shape genuinely doesn't match the schema cache we still
+        // return what we have so the page renders something.
+        toast.error(`Availability: ${error.message}`);
+      }
+      const rows = ((data ?? []) as unknown) as Array<
+        Property & { active?: boolean | null }
+      >;
+      // Show every property unless it's been explicitly deactivated.
+      return rows.filter((p) => p.active !== false) as Property[];
     },
   });
 
+  // Visible date window — derive from the current view so we don't ask the
+  // server for the entire reservation history just to color a single month.
+  const reservationWindow = useMemo(() => {
+    if (viewMode === "3mo" || viewMode === "month") {
+      const months = viewMode === "3mo" ? LONG_VIEW_MONTHS : 1;
+      const start = startOfMonth(monthAnchor);
+      const end = endOfMonth(addMonths(start, months - 1));
+      return { from: format(start, "yyyy-MM-dd"), to: format(end, "yyyy-MM-dd") };
+    }
+    const len = viewMode === "30d" ? 30 : 14;
+    return {
+      from: format(startDate, "yyyy-MM-dd"),
+      to: format(addDays(startDate, len), "yyyy-MM-dd"),
+    };
+  }, [viewMode, startDate, monthAnchor]);
+
   const { data: reservations = [] } = useQuery({
-    queryKey: ["avail-reservations"],
+    queryKey: ["avail-bookings", reservationWindow.from, reservationWindow.to],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("reservations")
-        .select("id, property_id, check_in, check_out, status, guest_name")
-        .neq("status", "cancelled");
-      return (data ?? []) as Reservation[];
+      // The live schema's table is `bookings` (columns: checkin / checkout /
+      // customer_name / status), not `reservations`. An older migration in
+      // this repo provisions `public.reservations` but it isn't applied to
+      // this deployment — PostgREST reports it as missing from the schema
+      // cache. We query bookings and remap the field names so the rest of
+      // the file keeps using its `Reservation { check_in, check_out,
+      // guest_name }` shape.
+      //
+      // Window predicate: reservation overlaps the visible range when
+      // (checkin < window.to) AND (checkout > window.from) — standard Allen
+      // overlap. Keeps the payload tiny.
+      const { data, error } = await supabase
+        .from("bookings")
+        .select("id, property_id, checkin, checkout, status, customer_name")
+        .neq("status", "cancelled")
+        .lt("checkin", reservationWindow.to)
+        .gt("checkout", reservationWindow.from);
+      if (error) {
+        toast.error(`Availability: ${error.message}`);
+      }
+      const rows = (data ?? []) as Array<{
+        id: string;
+        property_id: string;
+        checkin: string | null;
+        checkout: string | null;
+        status: string | null;
+        customer_name: string | null;
+      }>;
+      // Skip rows missing dates — they'd crash parseISO downstream.
+      return rows
+        .filter((r) => r.checkin && r.checkout)
+        .map<Reservation>((r) => ({
+          id: r.id,
+          property_id: r.property_id,
+          check_in: r.checkin as string,
+          check_out: r.checkout as string,
+          status: r.status ?? "confirmed",
+          guest_name: r.customer_name,
+        }));
     },
   });
 

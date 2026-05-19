@@ -33,12 +33,22 @@ interface Reminder {
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
 
-const fillTemplate = (body: string, r: Reservation, propName: string) => {
+const PORTAL_BASE =
+  (typeof window !== "undefined" && window.location?.origin) || "https://escapar.net";
+
+const fillTemplate = (
+  body: string,
+  r: Reservation,
+  propName: string,
+  portalSlug?: string | null,
+) => {
+  const portalLink = portalSlug ? `${PORTAL_BASE}/g/${portalSlug}` : "";
   return body
     .replace(/\{\{guest_name\}\}/gi, r.guest_name || "")
     .replace(/\{\{property\}\}/gi, propName)
     .replace(/\{\{check_in\}\}/gi, r.check_in)
-    .replace(/\{\{check_out\}\}/gi, r.check_out);
+    .replace(/\{\{check_out\}\}/gi, r.check_out)
+    .replace(/\{\{portal_link\}\}/gi, portalLink);
 };
 
 const cleanPhone = (p: string) => p.replace(/[^\d+]/g, "").replace(/^\+/, "");
@@ -47,6 +57,7 @@ export const WhatsAppReminders = ({ orgId }: { orgId: string | null }) => {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [props, setProps] = useState<Record<string, string>>({});
+  const [portalSlugs, setPortalSlugs] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -69,12 +80,28 @@ export const WhatsAppReminders = ({ orgId }: { orgId: string | null }) => {
         .eq("organization_id", orgId);
 
       const { data: properties } = await supabase
-        .from("properties").select("id, name").eq("organization_id", orgId);
+        .from("properties").select("id, name").eq("org_id", orgId);
 
       const propMap: Record<string, string> = {};
       (properties || []).forEach((p) => { propMap[p.id] = p.name; });
       setProps(propMap);
       setTemplates((tpls as any) || []);
+
+      // Resolve guest-book slugs per property so {{portal_link}} can be filled.
+      const { data: books } = await supabase
+        .from("guest_books")
+        .select("property_id, slug, active")
+        .eq("organization_id", orgId)
+        .eq("active", true);
+      const slugMap: Record<string, string> = {};
+      const bookRows = (books ?? []) as unknown as Array<{
+        property_id: string;
+        slug: string;
+      }>;
+      bookRows.forEach((b) => {
+        slugMap[b.property_id] = b.slug;
+      });
+      setPortalSlugs(slugMap);
 
       const list: Reminder[] = [];
       const todayStr = ymd(today);
@@ -111,7 +138,12 @@ export const WhatsAppReminders = ({ orgId }: { orgId: string | null }) => {
     };
 
     const body = tpl
-      ? fillTemplate(lang === "ar" ? tpl.body_ar : lang === "en" ? tpl.body_en : tpl.body_fr, r, props[r.property_id] || "")
+      ? fillTemplate(
+          lang === "ar" ? tpl.body_ar : lang === "en" ? tpl.body_en : tpl.body_fr,
+          r,
+          props[r.property_id] || "",
+          portalSlugs[r.property_id],
+        )
       : fallback[rem.type];
 
     const url = `https://wa.me/${cleanPhone(r.guest_phone)}?text=${encodeURIComponent(body)}`;

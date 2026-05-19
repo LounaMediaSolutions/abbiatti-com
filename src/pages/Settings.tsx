@@ -58,7 +58,7 @@ type Profile = {
   phone: string | null;
   avatar_url: string | null;
   language: string;
-  organization_id: string | null;
+  org_id: string | null;
 };
 
 type Org = {
@@ -100,21 +100,21 @@ export default function Settings() {
     setLoading(true);
     const { data: p } = await supabase
       .from("profiles")
-      .select("id, full_name, phone, avatar_url, language, organization_id")
+      .select("id, full_name, phone, avatar_url, language, org_id")
       .eq("id", user.id)
       .maybeSingle();
     setProfile(p as Profile | null);
-    if (p?.organization_id) {
+    if (p?.org_id) {
       const [{ data: o }, { data: tpl }] = await Promise.all([
         supabase
           .from("organizations")
           .select("id, name, logo_url, brand_color")
-          .eq("id", p.organization_id)
+          .eq("id", p.org_id)
           .maybeSingle(),
         supabase
           .from("message_templates")
           .select("*")
-          .eq("organization_id", p.organization_id)
+          .eq("organization_id", p.org_id)
           .order("sort_order"),
       ]);
       setOrg(o as Org | null);
@@ -158,11 +158,11 @@ export default function Settings() {
           </TabsTrigger>
           <TabsTrigger value="partners" className="flex items-center gap-2">
             <Handshake className="h-4 w-4" />{" "}
-            <span className="hidden sm:inline">Partenaires</span>
+            <span className="hidden sm:inline">{t("settings.tabs.partners")}</span>
           </TabsTrigger>
           <TabsTrigger value="albums" className="flex items-center gap-2">
             <Images className="h-4 w-4" />{" "}
-            <span className="hidden sm:inline">Albums</span>
+            <span className="hidden sm:inline">{t("settings.tabs.albums")}</span>
           </TabsTrigger>
           <TabsTrigger value="security" className="flex items-center gap-2">
             <Shield className="h-4 w-4" />{" "}
@@ -181,7 +181,7 @@ export default function Settings() {
         </TabsContent>
 
         <TabsContent value="org">
-          {org && profile.organization_id ? (
+          {org && profile.org_id ? (
             <OrgTab org={org} onSaved={load} />
           ) : (
             <Card>
@@ -191,9 +191,9 @@ export default function Settings() {
         </TabsContent>
 
         <TabsContent value="templates">
-          {profile.organization_id && (
+          {profile.org_id && (
             <TemplatesTab
-              orgId={profile.organization_id}
+              orgId={profile.org_id}
               templates={templates}
               onChanged={load}
             />
@@ -201,14 +201,14 @@ export default function Settings() {
         </TabsContent>
 
         <TabsContent value="partners">
-          {profile.organization_id && (
-            <PartnersTab orgId={profile.organization_id} />
+          {profile.org_id && (
+            <PartnersTab orgId={profile.org_id} />
           )}
         </TabsContent>
 
         <TabsContent value="albums">
-          {profile.organization_id && (
-            <AlbumsTab orgId={profile.organization_id} />
+          {profile.org_id && (
+            <AlbumsTab orgId={profile.org_id} />
           )}
         </TabsContent>
 
@@ -257,10 +257,10 @@ function ProfileTab({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center gap-4">
-          {profile.organization_id && (
+          {profile.org_id && (
             <AvatarUpload
               userId={profile.id}
-              organizationId={profile.organization_id}
+              organizationId={profile.org_id}
               currentUrl={profile.avatar_url}
               size="lg"
               onUploaded={onSaved}
@@ -416,7 +416,7 @@ function OrgTab({ org, onSaved }: { org: Org; onSaved: () => void }) {
         </div>
 
         <div className="space-y-2">
-          <Label>Logo de l'agence</Label>
+          <Label>{t("settings.orgLogo")}</Label>
           <div className="flex items-center gap-4">
             <div className="h-20 w-20 rounded-lg border bg-muted flex items-center justify-center overflow-hidden">
               {logoUrl ? (
@@ -447,7 +447,7 @@ function OrgTab({ org, onSaved }: { org: Org; onSaved: () => void }) {
         </div>
 
         <div className="space-y-2">
-          <Label>Couleur principale</Label>
+          <Label>{t("settings.brandColor")}</Label>
           <div className="flex items-center gap-3">
             <input
               type="color"

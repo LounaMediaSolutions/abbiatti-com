@@ -149,14 +149,14 @@ const Welcome = () => {
         </div>
 
         <div className="grid md:grid-cols-2 gap-4">
-          {/* Manager / Agency window */}
+          {/* Manager / Organization window */}
           <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-6 text-white shadow-xl hover-scale animate-fade-in">
             <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20 backdrop-blur mb-4">
               <Building2 className="h-6 w-6" />
             </div>
-            <h2 className="text-xl font-bold mb-1">Espace Agence</h2>
+            <h2 className="text-xl font-bold mb-1">Espace Organisation</h2>
             <p className="text-sm text-white/80 mb-5">
-              Admin & Co-hôte — gérez votre agence
+              Admin & Co-hôte — gérez votre organisation
             </p>
             <div className="space-y-2">
               <Button
@@ -181,7 +181,7 @@ const Welcome = () => {
                     )
                   }
                 >
-                  <Sparkles className="h-4 w-4 mr-2" /> Créer une agence
+                  <Sparkles className="h-4 w-4 mr-2" /> Créer une organisation
                 </Button>
               )}
             </div>

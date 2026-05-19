@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Navigate, Link } from "react-router-dom";
+import { Navigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
-import { Shield, ArrowLeft, FileText, Download, Send, Trash2 } from "lucide-react";
+import { Shield, FileText, Download, Send, Trash2 } from "lucide-react";
 import { Unauthorized } from "@/components/Unauthorized";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -16,6 +17,7 @@ import {
 import {
   computeUsageForOrg, buildLineItems, generateInvoicePdf, type LineItem,
 } from "@/lib/billing";
+import { isSuperAdminUser } from "@/lib/access";
 
 type Org = {
   id: string;
@@ -45,6 +47,7 @@ type Invoice = {
 };
 
 export default function SuperAdminBilling() {
+  const { t } = useTranslation();
   const { user, loading } = useAuth();
   const [isSuper, setIsSuper] = useState<boolean | null>(null);
   const [orgs, setOrgs] = useState<Org[]>([]);
@@ -61,13 +64,7 @@ export default function SuperAdminBilling() {
       setIsSuper(false);
       return;
     }
-    supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("role", "super_admin")
-      .maybeSingle()
-      .then(({ data }) => setIsSuper(!!data));
+    isSuperAdminUser(user.id).then(setIsSuper).catch(() => setIsSuper(false));
   }, [user?.id, loading]);
 
   const load = async () => {
@@ -92,16 +89,6 @@ export default function SuperAdminBilling() {
     if (isSuper) load();
   }, [isSuper]);
 
-  if (loading || isSuper === null) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-slate-300">
-        Chargement…
-      </div>
-    );
-  }
-  if (!user) return <Navigate to="/auth" replace />;
-  if (!isSuper) return <Unauthorized />;
-
   const savePrices = async () => {
     if (!editingPrices) return;
     const { error } = await supabase
@@ -117,8 +104,8 @@ export default function SuperAdminBilling() {
         price_per_mb_storage: editingPrices.price_per_mb_storage,
       })
       .eq("id", editingPrices.id);
-    if (error) return toast({ title: "Erreur", description: error.message, variant: "destructive" });
-    toast({ title: "Tarifs enregistrés" });
+    if (error) return toast({ title: t("common.error"), description: error.message, variant: "destructive" });
+    toast({ title: t("superAdminBilling.pricesSaved") });
     setEditingPrices(null);
     load();
   };
@@ -129,12 +116,12 @@ export default function SuperAdminBilling() {
       const usage = await computeUsageForOrg(org.id, year, month);
       const items: LineItem[] = buildLineItems(usage, org);
       if (items.length === 0) {
-        toast({ title: "Aucun montant à facturer pour cette période" });
+        toast({ title: t("superAdminBilling.nothingToBill") });
         return;
       }
       const subtotal = items.reduce((s, i) => s + i.total, 0);
       const total = subtotal;
-      const invoice_number = `INV-${year}${String(month).padStart(2, "0")}-${org.id.slice(0, 6).toUpperCase()}`;
+      const invoiceNumber = `INV-${year}${String(month).padStart(2, "0")}-${org.id.slice(0, 6).toUpperCase()}`;
 
       const { error } = await supabase.from("invoices").insert({
         organization_id: org.id,
@@ -145,13 +132,13 @@ export default function SuperAdminBilling() {
         subtotal,
         total,
         status: "draft",
-        invoice_number,
+        invoice_number: invoiceNumber,
       });
       if (error) throw error;
-      toast({ title: "Facture créée", description: invoice_number });
+      toast({ title: t("superAdminBilling.invoiceCreated"), description: invoiceNumber });
       load();
     } catch (e: any) {
-      toast({ title: "Erreur", description: e.message, variant: "destructive" });
+      toast({ title: t("common.error"), description: e.message, variant: "destructive" });
     } finally {
       setGenerating(null);
     }
@@ -161,7 +148,7 @@ export default function SuperAdminBilling() {
     const org = orgs.find((o) => o.id === inv.organization_id);
     const blob = await generateInvoicePdf({
       invoice_number: inv.invoice_number,
-      organization_name: org?.name ?? "Agence",
+      organization_name: org?.name ?? t("superAdminBilling.agencyFallback"),
       period_year: inv.period_year,
       period_month: inv.period_month,
       line_items: inv.line_items as LineItem[],
@@ -182,193 +169,158 @@ export default function SuperAdminBilling() {
     const patch: any = { status };
     if (status === "paid") patch.paid_at = new Date().toISOString();
     const { error } = await supabase.from("invoices").update(patch).eq("id", inv.id);
-    if (error) return toast({ title: "Erreur", description: error.message, variant: "destructive" });
+    if (error) return toast({ title: t("common.error"), description: error.message, variant: "destructive" });
     load();
   };
 
   const deleteInvoice = async (inv: Invoice) => {
-    if (!confirm(`Supprimer la facture ${inv.invoice_number} ?`)) return;
+    if (!confirm(t("superAdminBilling.deleteInvoiceConfirm", { invoice: inv.invoice_number }))) return;
     const { error } = await supabase.from("invoices").delete().eq("id", inv.id);
-    if (error) return toast({ title: "Erreur", description: error.message, variant: "destructive" });
+    if (error) return toast({ title: t("common.error"), description: error.message, variant: "destructive" });
     load();
   };
 
+  if (loading || isSuper === null) {
+    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">{t("common.loading")}</div>;
+  }
+  if (!user) return <Navigate to="/auth" replace />;
+  if (!isSuper) return <Unauthorized />;
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100">
-      <div className="border-b border-slate-800 bg-slate-900/60 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <Link to="/super-admin" className="text-slate-400 hover:text-white">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-rose-600">
-              <Shield className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold">Facturation Super Admin</h1>
-              <p className="text-xs text-slate-400">Tarifs et factures par agence</p>
-            </div>
-          </div>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <div className="flex items-center gap-3">
+        <div className="rounded-lg bg-primary/10 p-2 text-primary">
+          <Shield className="h-5 w-5" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-secondary">{t("superAdminBilling.title")}</h1>
+          <p className="text-sm text-muted-foreground">{t("superAdminBilling.subtitle")}</p>
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl px-6 py-8 space-y-8">
-        {/* Period selector */}
-        <Card className="border-slate-800 bg-slate-900/50 p-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <div>
-              <Label className="text-slate-400">Année</Label>
-              <Input
-                type="number"
-                value={year}
-                onChange={(e) => setYear(parseInt(e.target.value))}
-                className="w-28 border-slate-700 bg-slate-800 text-slate-100"
-              />
-            </div>
-            <div>
-              <Label className="text-slate-400">Mois</Label>
-              <Input
-                type="number"
-                min={1}
-                max={12}
-                value={month}
-                onChange={(e) => setMonth(parseInt(e.target.value))}
-                className="w-20 border-slate-700 bg-slate-800 text-slate-100"
-              />
-            </div>
-            <p className="text-sm text-slate-400 ml-2">
-              Période de facturation pour la génération
-            </p>
+      <Card className="p-4 shadow-card">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <Label>{t("reports.filters.year")}</Label>
+            <Input
+              type="number"
+              value={year}
+              onChange={(e) => setYear(parseInt(e.target.value))}
+              className="w-28"
+            />
           </div>
-        </Card>
+          <div>
+            <Label>{t("reports.filters.month")}</Label>
+            <Input
+              type="number"
+              min={1}
+              max={12}
+              value={month}
+              onChange={(e) => setMonth(parseInt(e.target.value))}
+              className="w-20"
+            />
+          </div>
+          <p className="ml-2 text-sm text-muted-foreground">
+            {t("superAdminBilling.periodHint")}
+          </p>
+        </div>
+      </Card>
 
-        {/* Organizations & pricing */}
-        <Card className="border-slate-800 bg-slate-900/50">
-          <div className="border-b border-slate-800 p-4">
-            <h2 className="font-semibold">Tarifs par agence</h2>
-          </div>
-          <div className="divide-y divide-slate-800">
-            {orgs.map((org) => (
-              <div key={org.id} className="flex flex-wrap items-center gap-3 p-4">
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold truncate">{org.name}</p>
-                  <p className="text-xs text-slate-400">
-                    Base {org.price_monthly_base} · Admin {org.price_per_admin} · Co-host {org.price_per_cohost} ·
-                    Employé {org.price_per_employee} · Msg {org.price_per_message} · iCal {org.price_per_ical_sync} ·{" "}
-                    {org.billing_currency}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setEditingPrices(org)}
-                  className="border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
-                >
-                  Tarifs
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => generateInvoice(org)}
-                  disabled={generating === org.id}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  <FileText className="mr-1 h-4 w-4" />
-                  Générer facture {month}/{year}
-                </Button>
+      <Card className="shadow-card">
+        <div className="border-b p-4">
+          <h2 className="font-semibold text-secondary">{t("superAdminBilling.pricingByAgency")}</h2>
+        </div>
+        <div className="divide-y">
+          {orgs.map((org) => (
+            <div key={org.id} className="flex flex-wrap items-center gap-3 p-4">
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-semibold text-secondary">{org.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  Base {org.price_monthly_base} · Admin {org.price_per_admin} · Co-host {org.price_per_cohost} ·
+                  Employé {org.price_per_employee} · Msg {org.price_per_message} · iCal {org.price_per_ical_sync} ·{" "}
+                  {org.billing_currency}
+                </p>
               </div>
-            ))}
-          </div>
-        </Card>
+              <Button size="sm" variant="outline" onClick={() => setEditingPrices(org)}>
+                {t("superAdminBilling.prices")}
+              </Button>
+              <Button size="sm" onClick={() => generateInvoice(org)} disabled={generating === org.id}>
+                <FileText className="mr-1 h-4 w-4" />
+                {t("superAdminBilling.generateInvoice", { month, year })}
+              </Button>
+            </div>
+          ))}
+        </div>
+      </Card>
 
-        {/* Invoices */}
-        <Card className="border-slate-800 bg-slate-900/50">
-          <div className="border-b border-slate-800 p-4">
-            <h2 className="font-semibold">Factures récentes</h2>
-          </div>
-          <div className="divide-y divide-slate-800">
-            {invoices.length === 0 ? (
-              <p className="p-6 text-center text-slate-400">Aucune facture</p>
-            ) : (
-              invoices.map((inv) => {
-                const org = orgs.find((o) => o.id === inv.organization_id);
-                return (
-                  <div key={inv.id} className="flex flex-wrap items-center gap-3 p-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold">{inv.invoice_number}</p>
-                        <Badge
-                          variant="outline"
-                          className={
-                            inv.status === "paid"
-                              ? "border-emerald-700 text-emerald-400"
-                              : inv.status === "sent"
-                                ? "border-blue-700 text-blue-400"
-                                : inv.status === "void"
-                                  ? "border-rose-700 text-rose-400"
-                                  : "border-slate-600 text-slate-400"
-                          }
-                        >
-                          {inv.status}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-slate-400">
-                        {org?.name ?? "—"} · {inv.period_month}/{inv.period_year} ·{" "}
-                        {inv.total.toFixed(2)} {inv.currency}
-                      </p>
+      <Card className="shadow-card">
+        <div className="border-b p-4">
+          <h2 className="font-semibold text-secondary">{t("superAdminBilling.recentInvoices")}</h2>
+        </div>
+        <div className="divide-y">
+          {invoices.length === 0 ? (
+            <p className="p-6 text-center text-muted-foreground">{t("superAdminBilling.noInvoices")}</p>
+          ) : (
+            invoices.map((inv) => {
+              const org = orgs.find((o) => o.id === inv.organization_id);
+              return (
+                <div key={inv.id} className="flex flex-wrap items-center gap-3 p-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-secondary">{inv.invoice_number}</p>
+                      <Badge
+                        variant="outline"
+                        className={
+                          inv.status === "paid"
+                            ? "border-emerald-700 text-emerald-600"
+                            : inv.status === "sent"
+                              ? "border-blue-700 text-blue-600"
+                              : inv.status === "void"
+                                ? "border-rose-700 text-rose-600"
+                                : "text-muted-foreground"
+                        }
+                      >
+                        {inv.status}
+                      </Badge>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => downloadPdf(inv)}
-                      className="border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
-                    >
-                      <Download className="h-4 w-4" />
-                    </Button>
-                    {inv.status === "draft" && (
-                      <Button
-                        size="sm"
-                        onClick={() => setStatus(inv, "sent")}
-                        className="bg-blue-600 hover:bg-blue-700"
-                      >
-                        <Send className="mr-1 h-4 w-4" />
-                        Envoyer
-                      </Button>
-                    )}
-                    {inv.status === "sent" && (
-                      <Button
-                        size="sm"
-                        onClick={() => setStatus(inv, "paid")}
-                        className="bg-emerald-600 hover:bg-emerald-700"
-                      >
-                        Marquer payée
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => deleteInvoice(inv)}
-                      className="border-rose-900 bg-rose-950/50 text-rose-400 hover:bg-rose-900"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      {org?.name ?? "—"} · {inv.period_month}/{inv.period_year} ·{" "}
+                      {inv.total.toFixed(2)} {inv.currency}
+                    </p>
                   </div>
-                );
-              })
-            )}
-          </div>
-        </Card>
-      </div>
+                  <Button size="sm" variant="outline" onClick={() => downloadPdf(inv)}>
+                    <Download className="h-4 w-4" />
+                  </Button>
+                  {inv.status === "draft" && (
+                    <Button size="sm" onClick={() => setStatus(inv, "sent")}>
+                      <Send className="mr-1 h-4 w-4" />
+                        {t("superAdminBilling.send")}
+                    </Button>
+                  )}
+                  {inv.status === "sent" && (
+                    <Button size="sm" onClick={() => setStatus(inv, "paid")}>
+                      {t("superAdminBilling.markPaid")}
+                    </Button>
+                  )}
+                  <Button size="sm" variant="outline" onClick={() => deleteInvoice(inv)} className="text-destructive">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </Card>
 
-      {/* Edit prices */}
       <Dialog open={!!editingPrices} onOpenChange={(o) => !o && setEditingPrices(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Tarifs — {editingPrices?.name}</DialogTitle>
+            <DialogTitle>{t("superAdminBilling.pricesFor", { name: editingPrices?.name })}</DialogTitle>
           </DialogHeader>
           {editingPrices && (
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
-                <Label>Devise</Label>
+                <Label>{t("superAdminBilling.currency")}</Label>
                 <Input
                   value={editingPrices.billing_currency}
                   onChange={(e) =>
@@ -377,13 +329,13 @@ export default function SuperAdminBilling() {
                 />
               </div>
               {[
-                ["Base mensuelle", "price_monthly_base"],
-                ["Par admin", "price_per_admin"],
-                ["Par co-host", "price_per_cohost"],
-                ["Par employé", "price_per_employee"],
-                ["Par message", "price_per_message"],
-                ["Par sync iCal", "price_per_ical_sync"],
-                ["Par Mo stockage", "price_per_mb_storage"],
+                [t("superAdminBilling.priceFields.monthlyBase"), "price_monthly_base"],
+                [t("superAdminBilling.priceFields.perAdmin"), "price_per_admin"],
+                [t("superAdminBilling.priceFields.perCohost"), "price_per_cohost"],
+                [t("superAdminBilling.priceFields.perEmployee"), "price_per_employee"],
+                [t("superAdminBilling.priceFields.perMessage"), "price_per_message"],
+                [t("superAdminBilling.priceFields.perIcalSync"), "price_per_ical_sync"],
+                [t("superAdminBilling.priceFields.perStorageMb"), "price_per_mb_storage"],
               ].map(([label, key]) => (
                 <div key={key}>
                   <Label>{label}</Label>
@@ -404,9 +356,9 @@ export default function SuperAdminBilling() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingPrices(null)}>
-              Annuler
+              {t("common.cancel")}
             </Button>
-            <Button onClick={savePrices}>Enregistrer</Button>
+            <Button onClick={savePrices}>{t("common.save")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

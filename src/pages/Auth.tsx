@@ -192,10 +192,10 @@ const Auth = () => {
           <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 mb-3">
             <Building2 className="h-8 w-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-secondary">Espace Agence</h1>
+          <h1 className="text-2xl font-bold text-secondary">Espace Organisation</h1>
           {lastOrgName ? (
             <p className="text-base font-medium text-primary mt-1">
-              {t("auth.welcomeAgency", { name: lastOrgName }) ||
+              {t("auth.welcomeOrganization", { name: lastOrgName }) ||
                 `Bienvenue ${lastOrgName} 👋`}
             </p>
           ) : (
