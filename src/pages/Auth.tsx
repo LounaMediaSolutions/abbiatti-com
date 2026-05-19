@@ -8,6 +8,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { toast } from "sonner";
 import { Building2, ArrowLeft } from "lucide-react";
@@ -53,6 +63,8 @@ const Auth = () => {
     storedFrom,
   );
   const [loading, setLoading] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [pendingResetEmail, setPendingResetEmail] = useState("");
   const appOrigin = getAppOrigin();
 
   const [loginEmail, setLoginEmail] = useState("");
@@ -153,17 +165,26 @@ const Auth = () => {
     }
   };
 
-  const handleForgotPassword = async () => {
+  const handleForgotPassword = () => {
     const parsed = z.string().email().safeParse(loginEmail.trim());
     if (!parsed.success) {
       toast.error(t("auth.enterEmailFirst") || "Entre ton email d'abord");
       return;
     }
+    setPendingResetEmail(parsed.data);
+    setResetConfirmOpen(true);
+  };
+
+  const confirmSendResetEmail = async () => {
+    if (!pendingResetEmail) return;
     setLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(parsed.data, {
-        redirectTo: `${appOrigin}/reset-password`,
-      });
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        pendingResetEmail,
+        {
+          redirectTo: `${appOrigin}/reset-password`,
+        },
+      );
       if (error) {
         toast.error(error.message);
         return;
@@ -173,6 +194,8 @@ const Auth = () => {
       );
     } finally {
       setLoading(false);
+      setResetConfirmOpen(false);
+      setPendingResetEmail("");
     }
   };
 
@@ -305,6 +328,44 @@ const Auth = () => {
           </TabsContent>
         </Tabs>
       </Card>
+
+      <AlertDialog
+        open={resetConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open && !loading) {
+            setResetConfirmOpen(false);
+            setPendingResetEmail("");
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("auth.resetConfirmTitle") || "Envoyer l'email de réinitialisation ?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("auth.resetConfirmDesc", { email: pendingResetEmail }) ||
+                `Un lien de réinitialisation sera envoyé à ${pendingResetEmail}. Confirmer ?`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={loading}>
+              {t("common.cancel") || "Annuler"}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmSendResetEmail();
+              }}
+              disabled={loading}
+            >
+              {loading
+                ? t("common.sending") || "Envoi..."
+                : t("auth.resetConfirmAction") || "Envoyer l'email"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
