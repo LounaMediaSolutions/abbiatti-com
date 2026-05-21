@@ -1349,29 +1349,7 @@ const Properties = () => {
                   </TooltipContent>
                 </Tooltip>
               )}
-              {canApprove && (
-                <div className="mb-2 flex items-center gap-2 text-[11px]">
-                  <UserCog className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <span className="text-muted-foreground shrink-0">{t("properties.cohostAssign.label")}</span>
-                  <Select
-                    value={propertyCohosts[p.id] ?? "none"}
-                    disabled={savingCohost === p.id}
-                    onValueChange={(v) => assignCohost(p, v === "none" ? null : v)}
-                  >
-                    <SelectTrigger className="h-7 text-xs flex-1">
-                      <SelectValue placeholder={t("properties.cohostAssign.placeholder")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">{t("properties.cohostAssign.unassigned")}</SelectItem>
-                      {cohosts.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.full_name || t("properties.cohostAssign.unnamed")}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+              {/* Cohost assignment now lives under the property detail "Cohosts" tab. */}
               <div className="space-y-2">
                 <Button
                   size="sm"

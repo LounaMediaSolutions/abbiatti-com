@@ -1,208 +1,174 @@
-# Welcome to your Lovable project
+# Escapar
 
-TODO: Document your project here
+A multi-tenant **vacation-rental property management** SaaS. Property owners, co-hosts, field staff and guests each get a role-scoped experience: managers run the portfolio, co-hosts handle their assigned properties, employees see only their tasks, and guests get a self-service portal (guidebook, services, WhatsApp contact).
 
-Here is the plan:
+The app is a single-page React application backed by Supabase (auth, Postgres, storage, edge functions) and deployed on Vercel. It is white-label aware — each organization can set its own logo and brand color.
 
-============================================================
-TASK 1 (IMMEDIATE) – FIX ROLE-BASED REDIRECTION IN OLD APP
-============================================================
+---
 
-The old app (abbiatti-com) has one problem:
+## Features
 
-- When I login as admin, I go to employee page ("My tasks")
-- This is wrong. Admin should go to admin dashboard.
+- **Properties** — create, edit and approve listings; per-property detail view with tabs for availability, reservations, tasks and reports.
+- **Availability** — month calendar per property with iCal feed sync (Airbnb, Booking, etc.).
+- **Reservations** — manual + imported bookings, guest details, and ready-to-send WhatsApp message templates (FR / EN / AR).
+- **Tasks** — cleaning / maintenance / driver jobs assigned to staff, with photo upload and voice notes; simplified big-button UI for field employees.
+- **Reports** — monthly PDF revenue/occupancy reports (per property or all).
+- **Guest portal & guidebooks** — public guest pages, QR check-in, services and partner offers.
+- **Roles & access control** — super-admin, admin, co-host and employee roles, enforced via Supabase Row Level Security and `ProtectedRoute`.
+- **Internationalization** — French, English and Arabic via `i18next`.
 
-Please fix this first.
+---
 
-After this is fixed, we will move to the next tasks.
+## Tech stack
 
-============================================================
-FULL SCOPE OF THE APP (WHAT WE WILL BUILD TOGETHER)
-============================================================
+| Area | Choice |
+|---|---|
+| Framework | React 18 + TypeScript + Vite |
+| UI | Tailwind CSS + shadcn/ui (Radix primitives) + lucide-react |
+| Data / server state | TanStack Query |
+| Backend | Supabase (Auth, Postgres, Storage, Edge Functions) |
+| Routing | React Router |
+| i18n | i18next / react-i18next |
+| PDF | jsPDF + jspdf-autotable |
+| Testing | Vitest + Testing Library (unit), Playwright (E2E) |
+| Hosting | Vercel (SPA) |
 
-This is the complete app (ESCAPAR) that we will build step by step:
+---
 
-1. GUEST PAGE (escapar.net/g/ABC123)
-   - Property info (WiFi, rules, address, maps)
-   - Reservation details (dates, guests, price)
-   - Services to book (pack plage, baby bed, WiFi, transfer, welcome basket)
-   - Physical items to rent (scooter, car, baby chair, stroller, BBQ, beach tent)
-   - Marketplace (hosts renting items to other hosts)
-   - Partner offers (restaurants, beaches, excursions with QR codes or coupons)
-   - Region information (best beaches, restaurants, activities, maps, hours)
-   - Photo album (upload, watermark with Escapar logo, share to Instagram/Facebook)
-   - Coupon system (discounts, promo codes)
-   - WhatsApp messaging (contact cohost)
-   - Check-out reminder + review links
+## Getting started
 
-2. ADMIN DASHBOARD
-   - See all properties (add, edit, delete)
-   - See all reservations
-   - See all tasks
-   - Manage cohosts (add, remove, set permissions)
-   - Manage employees (cleaners, drivers, maintenance)
-   - Manage partners (restaurants, beaches, excursions)
-   - Manage coupons (create, edit, delete)
-   - Manage marketplace (approve items, view rentals, see commissions)
-   - See financial reports
+### Prerequisites
 
-3. COHOST DASHBOARD
-   - See ONLY properties assigned to them
-   - See ONLY tasks for their properties
-   - Assign tasks to employees
-   - Message guests via WhatsApp
-   - Generate QR codes for properties
-   - Manage marketplace items for their properties
+- Node.js 18+ (20 LTS recommended)
+- npm (a `package-lock.json` is committed; `bun.lockb` is also present if you prefer bun)
 
-4. EMPLOYEE DASHBOARD (exists, keep it)
-   - See ONLY tasks assigned to them
-   - Simple interface: BIG buttons, photo upload, voice recording
-   - Mark task as done
-   - QR code login (no email, only phone number)
+### Install
 
-5. PARTNER PORTAL
-   - Create offers (title, discount, validity)
-   - Generate QR code for offer
-   - See usage analytics
+```bash
+npm install
+```
 
-6. MARKETPLACE (hosts renting items to other hosts)
-   - Host A lists items (baby bed, pack plage, scooter, etc.)
-   - Host B rents items from Host A
-   - Delivery by driver
-   - escapar takes 10% commission
+### Run the dev server
 
-============================================================
-WHAT YOU CAN REUSE FROM THE OLD APP (abbiatti-com)
-============================================================
+```bash
+npm run dev
+```
 
-✅ GOOD CODE – KEEP AND REUSE:
+Vite serves the app at http://localhost:5173 by default.
 
-- Supabase database (project "escapar") – tables already exist
-- Authentication – Supabase Auth is working
-- Employee dashboard – simple UI with tasks
-- Create employee dialog – phone-only creation
-- QR code generation functions
+### Environment variables
 
-❌ BAD CODE – IGNORE / REWRITE:
+The Supabase project URL and public (anon) key are currently embedded in
+`src/integrations/supabase/client.ts`, so no `.env` is required just to run the app.
 
-- All role-based routing (it's broken)
-- Admin dashboard (missing)
-- Cohost dashboard (missing)
-- Any messy or hard-to-read code
+A `.env` file is used only for optional flags and end-to-end test credentials:
 
-============================================================
-QUESTIONS FOR YOU
-============================================================
+```bash
+# Optional: log auth redirect decisions in the console while debugging routing
+VITE_DEBUG_AUTH_REDIRECT=true
 
-1. Do you agree to work together on this project?
-2. Can you fix the role-based redirection first?
-3. How many hours per week can you work?
-4. Do you understand the full scope of the app?
+# Playwright E2E accounts (see e2e/)
+E2E_BASE_URL=https://your-preview-url.vercel.app
+E2E_SUPER_ADMIN_EMAIL=...
+E2E_SUPER_ADMIN_PASSWORD=...
+E2E_ADMIN_EMAIL=...
+E2E_ADMIN_PASSWORD=...
+E2E_COHOST_EMAIL=...
+E2E_COHOST_PASSWORD=...
+E2E_STAFF_EMAIL=...
+E2E_STAFF_PASSWORD=...
+```
 
-Let's start with TASK 1 (fix the redirection) and then we will discuss the next tasks.
+---
 
-Later, when the app is working well, we can talk about a stable monthly salary.
+## Available scripts
 
-Please confirm.
+| Script | Description |
+|---|---|
+| `npm run dev` | Start the Vite dev server |
+| `npm run build` | Production build to `dist/` |
+| `npm run build:dev` | Build in development mode |
+| `npm run preview` | Preview the production build locally |
+| `npm run lint` | Run ESLint |
+| `npm run test` | Run unit tests once (Vitest) |
+| `npm run test:watch` | Run unit tests in watch mode |
 
-Thank you.
+End-to-end tests run through Playwright:
 
-- If user is admin → redirect to /admin/dashboard
-- If user is cohost → redirect to /cohost/dashboard
-- If user is employee (cleaner/driver) → redirect to /employee (My tasks)
+```bash
+npx playwright test
+```
 
-super-admin
-admin
-cohost
-cleaner, driver, decorator, maintenance, or staff
+---
 
-==================
-= latest message =
-==================
+## Roles & routing
 
-============================================================
-WHAT WE ALREADY HAVE (READY)
-============================================================
+User roles are read from the `profiles` table on every page load — never trusted from
+client state — and pages are wrapped in `ProtectedRoute` with the required role(s).
 
-1. DOMAIN & HOSTING
-   - abbiatti-com.vercel.app (working)
-   - Supabase project "escapar" (database ready)
+| Role | Landing route |
+|---|---|
+| super-admin | `/super-admin` |
+| admin | `/admin/dashboard` |
+| co-host | `/cohost/dashboard` |
+| cleaner / driver / decorator / maintenance / staff | `/employee` |
 
-2. DATABASE (Supabase)
-   - Tables already exist: profiles, properties, tasks, bookings, property_cohosts, organizations, services
-   - Data exists (properties, bookings, etc.)
+Availability, reservations, tasks and reports are reached through a property:
+`/properties` → open a property → `/properties/:id` (tabbed detail).
 
-3. BASIC AUTHENTICATION
-   - Supabase Auth is configured and working
-   - Users can log in (admin, cohost, employee)
+---
 
-4. EMPLOYEE DASHBOARD (exists, works)
-   - /employee/tasks page
-   - Tasks list, photos, voice recording
+## Project structure
 
-5. CREATE EMPLOYEE (works)
-   - Dialog to create employee with name + phone only
-   - Generates QR code for login
+```
+src/
+  pages/                 Route-level screens (Properties, PropertyDetail, Tasks, …)
+  components/            Shared components, incl. AppLayout & ProtectedRoute
+  components/ui/         shadcn/ui primitives
+  contexts/             AuthContext and other providers
+  hooks/                Reusable hooks
+  integrations/supabase/ Supabase client + generated types
+  lib/                  Helpers (access control, utils)
+  i18n/locales/         fr / en / ar translation files
+  assets/               Logos and static assets
+supabase/
+  functions/            Edge functions (sync-ical, create-team-member, …)
+  migrations/           SQL migrations
+  config.toml           Supabase project config
+e2e/                    Playwright specs
+electron/               Optional Electron desktop shell
+```
 
-============================================================
-WHAT IS BROKEN OR MISSING
-============================================================
+---
 
-1. ROLE‑BASED REDIRECTION (BROKEN)
-   - Current: all users go to employee page after login
-   - Must fix: Super Admin → /super-admin, Admin → /admin, Cohost → /cohost, Employee → /employee/tasks
+## Backend (Supabase)
 
-2. ADMIN DASHBOARD (MISSING)
-   - No dashboard for property owners
-   - They cannot manage properties, see bookings, invite cohosts
+- **Project:** `escapar`
+- **Core tables:** `profiles`, `properties`, `tasks`, `bookings`, `property_cohosts`, `organizations`, `services`
+- **Edge functions** (in `supabase/functions/`): `sync-ical`, `create-guest-account`, `create-team-member`, `create-platform-staff`, `generate-magic-link`, `import-listing`, `set-user-banned`, `cleanup-guest-accounts`, `inngest`
+- **Migrations:** `supabase/migrations/`
 
-3. COHOST DASHBOARD (MISSING)
-   - No dashboard for cohosts
-   - They cannot assign tasks, validate employee work
+Access is scoped per role through Row Level Security; the front end additionally guards
+routes and queries so each dashboard only sees data it is allowed to.
 
-4. SUPER ADMIN DASHBOARD (MISSING)
-   - No dashboard to validate Admins or Partners
-   - No global statistics
+---
 
-5. GUEST PORTAL (PARTIALLY DONE)
-   - I have a basic HTML/CSS version
-   - Missing: services booking, partner offers, photo upload with watermark, coupons, WhatsApp automation
+## Deployment
 
-6. MARKETPLACE (MISSING)
-   - Admins cannot rent items to other Admins yet
+Deployed as a static SPA on **Vercel**. `vercel.json` rewrites all paths to `/` so client-side
+routing works on hard refresh and deep links.
 
-7. REVIEW SYSTEM (MISSING)
-   - Guests cannot rate properties, cohosts cannot rate employees
+```bash
+npm run build   # outputs to dist/
+```
 
-8. WHATSAPP API (NOT CONFIGURED)
-   - No automatic messages (welcome, reminders, check-out)
+---
 
-============================================================
-WHAT YOU CAN HELP ME WITH (PAID TASKS)
-============================================================
+## Contributing
 
-Here are the tasks I need your help with. You can pick any:
+Project conventions, the role map, the table allow-list and the skills/agents used for
+this codebase are documented in [`CLAUDE.md`](./CLAUDE.md). A few rules worth repeating:
 
-PRIORITY 1 (urgent – fix broken things):
-
-- [ ] Fix role‑based redirection (all users go to wrong page)
-- [ ] Create basic Admin dashboard (CRUD properties, invite cohosts)
-- [ ] Create basic Cohost dashboard (tasks, employee management)
-
-PRIORITY 2 (complete guest portal):
-
-- [ ] Finish guest page (services booking, WhatsApp integration)
-- [ ] Add photo upload with watermark
-- [ ] Add partner offers display
-
-PRIORITY 3 (marketplace & reviews):
-
-- [ ] Add marketplace (rent items between hosts)
-- [ ] Add review system (ratings and comments)
-
-PRIORITY 4 (advanced):
-
-- [ ] WhatsApp API setup (templates, automation)
-- [ ] Security audit and performance optimization
-- [ ] Deploy to escapar.net
+- Read the user's role from `profiles` before rendering — never trust client state.
+- Use the existing Supabase client in `src/integrations/supabase/client.ts`; don't create new ones.
+- Keep the employee UI simple (big buttons, photo/voice), and only query the tables listed in `CLAUDE.md`.

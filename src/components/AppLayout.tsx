@@ -21,6 +21,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { InvitationBanner } from "@/components/InvitationBanner";
 import { cn } from "@/lib/utils";
 import { getUserAccess } from "@/lib/access";
+import { toHslChannels } from "@/lib/brandColor";
 import logo from "@/assets/abbiatti-logo.png";
 import i18n from "@/i18n";
 
@@ -86,11 +87,13 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
         .maybeSingle();
       setOrgLogo(org?.logo_url ?? null);
       setOrgName(org?.name ?? null);
-      if (org?.brand_color) {
-        document.documentElement.style.setProperty(
-          "--primary",
-          org.brand_color,
-        );
+      // brand_color may be stored as a hex string ("#1e40af") or as HSL
+      // channels ("205 55% 28%"). The token is consumed as hsl(var(--primary)),
+      // so a raw hex produces invalid CSS and primary buttons render white.
+      // Normalize to HSL channels (or fall back to the default theme color).
+      const primaryHsl = toHslChannels(org?.brand_color);
+      if (primaryHsl) {
+        document.documentElement.style.setProperty("--primary", primaryHsl);
       } else {
         document.documentElement.style.removeProperty("--primary");
       }
