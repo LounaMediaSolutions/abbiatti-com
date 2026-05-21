@@ -11,13 +11,14 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { useTranslation } from "react-i18next";
 
-const Reports = () => {
+const Reports = ({ propertyId, embedded = false }: { propertyId?: string; embedded?: boolean } = {}) => {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [orgId, setOrgId] = useState<string | null>(null);
   const [orgName, setOrgName] = useState("");
   const [properties, setProperties] = useState<{ id: string; name: string }[]>([]);
-  const [propertyId, setPropertyId] = useState<string>("all");
+  // When scoped to a single property (property detail tabs), lock the filter to it.
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>(propertyId ?? "all");
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
@@ -26,6 +27,11 @@ const Reports = () => {
     () => Array.from({ length: 12 }, (_, index) => new Intl.DateTimeFormat(i18n.language, { month: "long" }).format(new Date(2026, index, 1))),
     [i18n.language],
   );
+
+  // Keep the locked filter in sync when the scoping property changes.
+  useEffect(() => {
+    if (propertyId) setSelectedPropertyId(propertyId);
+  }, [propertyId]);
 
   useEffect(() => {
     if (!user) return;
@@ -48,7 +54,7 @@ const Reports = () => {
       const end = new Date(year, month + 1, 0).toISOString().slice(0, 10);
 
       let q = supabase.from("reservations").select("*, properties(name)").eq("organization_id", orgId).gte("check_in", start).lte("check_in", end).order("check_in");
-      if (propertyId !== "all") q = q.eq("property_id", propertyId);
+      if (selectedPropertyId !== "all") q = q.eq("property_id", selectedPropertyId);
       const { data: resas, error } = await q;
       if (error) throw error;
 
@@ -60,7 +66,7 @@ const Reports = () => {
       }, 0);
 
       const doc = new jsPDF();
-      const propLabel = propertyId === "all" ? t("reports.allProperties") : (properties.find((p) => p.id === propertyId)?.name || "");
+      const propLabel = selectedPropertyId === "all" ? t("reports.allProperties") : (properties.find((p) => p.id === selectedPropertyId)?.name || "");
 
       doc.setFontSize(20);
       doc.text(orgName || t("reports.documentFallback"), 14, 18);
@@ -126,24 +132,28 @@ const Reports = () => {
   };
 
   return (
-    <div className="container mx-auto px-4 py-6 max-w-3xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold flex items-center gap-2"><FileText className="w-6 h-6 text-primary" /> {t("reports.title")}</h1>
-        <p className="text-sm text-muted-foreground">{t("reports.subtitle")}</p>
-      </div>
+    <div className={embedded ? "" : "container mx-auto px-4 py-6 max-w-3xl"}>
+      {!embedded && (
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold flex items-center gap-2"><FileText className="w-6 h-6 text-primary" /> {t("reports.title")}</h1>
+          <p className="text-sm text-muted-foreground">{t("reports.subtitle")}</p>
+        </div>
+      )}
 
       <Card className="p-5 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div>
-            <Label>{t("reports.filters.property")}</Label>
-            <Select value={propertyId} onValueChange={setPropertyId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t("reports.allProperties")}</SelectItem>
-                {properties.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
+        <div className={embedded ? "grid grid-cols-1 md:grid-cols-2 gap-3" : "grid grid-cols-1 md:grid-cols-3 gap-3"}>
+          {!embedded && (
+            <div>
+              <Label>{t("reports.filters.property")}</Label>
+              <Select value={selectedPropertyId} onValueChange={setSelectedPropertyId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("reports.allProperties")}</SelectItem>
+                  {properties.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div>
             <Label>{t("reports.filters.month")}</Label>
             <Select value={String(month)} onValueChange={(v) => setMonth(+v)}>

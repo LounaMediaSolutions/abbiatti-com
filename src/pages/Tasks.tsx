@@ -138,7 +138,7 @@ const normalizeTaskRow = (row: any): Task => {
   } as Task;
 };
 
-const Tasks = () => {
+const Tasks = ({ propertyId, embedded = false }: { propertyId?: string; embedded?: boolean } = {}) => {
   const { t } = useTranslation();
   const { user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -256,7 +256,12 @@ const Tasks = () => {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
+  // When scoped to a single property (property detail tabs), only that
+  // property's tasks are shown and its dropdown is pre-narrowed.
+  const formProperties = propertyId ? properties.filter((p) => p.id === propertyId) : properties;
+
   const visible = tasks.filter((tk) => {
+    if (propertyId && tk.property_id !== propertyId) return false;
     if (filter !== "all" && tk.assigned_to !== user?.id) return false;
     if (statusFilter !== "all" && tk.status !== statusFilter) return false;
     return true;
@@ -403,7 +408,7 @@ const Tasks = () => {
   }
 
   return (
-    <div className="space-y-4 max-w-5xl mx-auto">
+    <div className={cn("space-y-4", !embedded && "max-w-5xl mx-auto")}>
       {isManager && selectedIds.size > 0 && (
         <Card
           className="sticky top-2 z-30 flex items-center justify-between gap-3 p-3 bg-primary text-primary-foreground shadow-card"
@@ -448,9 +453,16 @@ const Tasks = () => {
         </Card>
       )}
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-2xl md:text-3xl font-bold text-secondary">{t("tasks.title")}</h1>
+        {embedded ? <div /> : <h1 className="text-2xl md:text-3xl font-bold text-secondary">{t("tasks.title")}</h1>}
         {isManager && (
-          <Dialog open={openNew} onOpenChange={setOpenNew}>
+          <Dialog
+            open={openNew}
+            onOpenChange={(o) => {
+              setOpenNew(o);
+              // Pre-select the property when adding from within a property's detail.
+              if (o && propertyId) setForm((f) => ({ ...f, property_id: propertyId }));
+            }}
+          >
             <DialogTrigger asChild>
               <Button data-testid="open-task-dialog">
                 <Plus className="h-4 w-4 mr-2" />
@@ -501,7 +513,7 @@ const Tasks = () => {
                   <Select value={form.property_id} onValueChange={(v) => setForm({ ...form, property_id: v })}>
                     <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                     <SelectContent>
-                      {properties.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                      {formProperties.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>

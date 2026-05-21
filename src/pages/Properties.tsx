@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Plus, Home, Pencil, Trash2, MapPin, Building2, Castle, Hotel, Bed, HelpCircle, Link2, Calendar, Sparkles, History, UserCog } from "lucide-react";
+import { Plus, Home, Pencil, Trash2, MapPin, Building2, Castle, Hotel, Bed, HelpCircle, Link2, Calendar, Sparkles, History, UserCog, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -245,6 +246,7 @@ const buildAddress = (p: Partial<Property>) => {
 
 const Properties = () => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [items, setItems] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -1251,7 +1253,13 @@ const Properties = () => {
                   />
                 )}
                 <div className="min-w-0 flex-1">
-                  <h3 className="font-semibold text-secondary truncate">{p.name}</h3>
+                  <h3
+                    className="font-semibold text-secondary truncate cursor-pointer hover:underline"
+                    onClick={() => navigate(`/properties/${p.id}`)}
+                    title={t("propertyDetail.open", { defaultValue: "Ouvrir" })}
+                  >
+                    {p.name}
+                  </h3>
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
                     {t(`properties.types.${p.property_type ?? "apartment"}`)}
                   </p>
@@ -1364,36 +1372,46 @@ const Properties = () => {
                   </Select>
                 </div>
               )}
-              <div className="flex gap-2">
+              <div className="space-y-2">
                 <Button
-                  variant="outline"
                   size="sm"
-                  className="flex-1"
-                  onClick={() => openEdit(p)}
-                  disabled={!canManageAll || (p.approval_status === "pending" && !canApprove)}
-                  title={p.approval_status === "pending" && !canApprove ? t("properties.approval.lockedHint") : undefined}
+                  className="w-full"
+                  data-testid="property-open-button"
+                  onClick={() => navigate(`/properties/${p.id}`)}
                 >
-                  <Pencil className="h-3.5 w-3.5 mr-1" /> {t("properties.edit")}
+                  {t("propertyDetail.open", { defaultValue: "Ouvrir" })} <ArrowRight className="h-3.5 w-3.5 ml-1" />
                 </Button>
-                <Button variant="outline" size="sm" data-testid="property-ical-button" onClick={() => setIcalProperty(p)} title={t("ical.title")}>
-                  <Calendar className="h-3.5 w-3.5" />
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setHistoryFor(p)} title={t("properties.approval.history")}>
-                  <History className="h-3.5 w-3.5" />
-                </Button>
-                {(p as any).qr_token && (
-                  <PropertyQRCode propertyName={p.name} qrToken={(p as any).qr_token} />
-                )}
-                {canManageAll && (
+                <div className="flex flex-wrap gap-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setDeleteId(p.id)}
-                    aria-label={`${t("properties.delete")} ${p.name}`}
+                    className="flex-1 min-w-[88px]"
+                    onClick={() => openEdit(p)}
+                    disabled={!canManageAll || (p.approval_status === "pending" && !canApprove)}
+                    title={p.approval_status === "pending" && !canApprove ? t("properties.approval.lockedHint") : undefined}
                   >
-                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                    <Pencil className="h-3.5 w-3.5 mr-1" /> {t("properties.edit")}
                   </Button>
-                )}
+                  <Button variant="outline" size="sm" data-testid="property-ical-button" onClick={() => setIcalProperty(p)} title={t("ical.title")}>
+                    <Calendar className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setHistoryFor(p)} title={t("properties.approval.history")}>
+                    <History className="h-3.5 w-3.5" />
+                  </Button>
+                  {(p as any).qr_token && (
+                    <PropertyQRCode propertyName={p.name} qrToken={(p as any).qr_token} />
+                  )}
+                  {canManageAll && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setDeleteId(p.id)}
+                      aria-label={`${t("properties.delete")} ${p.name}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                    </Button>
+                  )}
+                </div>
               </div>
             </Card>
           ))}

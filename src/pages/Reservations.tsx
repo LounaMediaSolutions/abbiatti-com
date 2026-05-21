@@ -58,7 +58,7 @@ function normalizePhone(p: string) {
   return p.replace(/[^\d]/g, "");
 }
 
-export default function Reservations() {
+export default function Reservations({ propertyId, embedded = false }: { propertyId?: string; embedded?: boolean } = {}) {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -160,6 +160,18 @@ export default function Reservations() {
 
   const propertyMap = useMemo(() => Object.fromEntries(properties.map((p) => [p.id, p.name])), [properties]);
 
+  // When scoped to a single property (property detail tabs), narrow the lists
+  // shown to just that property. `propertyMap` stays built from the full list
+  // so guest/property names always resolve.
+  const displayProperties = useMemo(
+    () => (propertyId ? properties.filter((p) => p.id === propertyId) : properties),
+    [properties, propertyId],
+  );
+  const displayReservations = useMemo(
+    () => (propertyId ? reservations.filter((r) => r.property_id === propertyId) : reservations),
+    [reservations, propertyId],
+  );
+
   const upsertRes = useMutation({
     mutationFn: async (r: Partial<Reservation> & { organization_id?: string }) => {
       if (r.id) {
@@ -198,11 +210,13 @@ export default function Reservations() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><CalendarDays className="h-6 w-6" /> {t("reservations.title")}</h1>
-          <p className="text-sm text-muted-foreground">{t("reservations.subtitle")}</p>
-        </div>
-        <div className="flex gap-2">
+        {!embedded && (
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2"><CalendarDays className="h-6 w-6" /> {t("reservations.title")}</h1>
+            <p className="text-sm text-muted-foreground">{t("reservations.subtitle")}</p>
+          </div>
+        )}
+        <div className="flex gap-2 ml-auto">
           <Button variant="outline" onClick={() => syncIcal.mutate(undefined)} disabled={syncIcal.isPending}>
             <RefreshCw className={`h-4 w-4 mr-2 ${syncIcal.isPending ? "animate-spin" : ""}`} />
             {t("reservations.syncAll")}
@@ -218,7 +232,7 @@ export default function Reservations() {
       <Card className="p-4">
         <h2 className="font-semibold mb-3 flex items-center gap-2"><Link2 className="h-4 w-4" /> {t("reservations.icalFeeds")}</h2>
         <div className="grid sm:grid-cols-2 gap-3">
-          {properties.map((p) => {
+          {displayProperties.map((p) => {
             const propFeeds = feeds.filter((f) => f.property_id === p.id);
             return (
               <div key={p.id} className="border rounded-lg p-3">
@@ -250,10 +264,10 @@ export default function Reservations() {
 
       {/* Reservations list */}
       <div className="space-y-3">
-        {reservations.length === 0 ? (
+        {displayReservations.length === 0 ? (
           <Card className="p-8 text-center text-muted-foreground">{t("reservations.empty")}</Card>
         ) : (
-          reservations.map((r) => {
+          displayReservations.map((r) => {
             const incomplete = !r.guest_name || !r.guest_phone;
             return (
               <Card key={r.id} className="p-4">
@@ -327,7 +341,8 @@ export default function Reservations() {
         open={addOpen || !!editing}
         onOpenChange={(o) => { if (!o) { setAddOpen(false); setEditing(null); } }}
         reservation={editing}
-        properties={properties}
+        properties={displayProperties}
+        defaultPropertyId={propertyId}
         orgId={orgId}
         onSave={(r) => upsertRes.mutate(r)}
       />
@@ -362,11 +377,12 @@ export default function Reservations() {
   );
 }
 
-function ReservationDialog({ open, onOpenChange, reservation, properties, orgId, onSave }: {
+function ReservationDialog({ open, onOpenChange, reservation, properties, defaultPropertyId, orgId, onSave }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   reservation: Reservation | null;
   properties: Property[];
+  defaultPropertyId?: string;
   orgId?: string;
   onSave: (r: Partial<Reservation>) => void;
 }) {
@@ -374,8 +390,17 @@ function ReservationDialog({ open, onOpenChange, reservation, properties, orgId,
   const [form, setForm] = useState<Partial<Reservation>>({});
 
   useEffect(() => {
-    setForm(reservation ?? { source: "manual", status: "confirmed", guest_language: "fr", guests_count: 1 });
-  }, [reservation, open]);
+    setForm(
+      reservation ?? {
+        source: "manual",
+        status: "confirmed",
+        guest_language: "fr",
+        guests_count: 1,
+        // Pre-select the property when adding from within a property's detail.
+        ...(defaultPropertyId ? { property_id: defaultPropertyId } : {}),
+      },
+    );
+  }, [reservation, open, defaultPropertyId]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

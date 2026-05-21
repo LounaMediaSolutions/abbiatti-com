@@ -5,13 +5,10 @@ import {
   LayoutDashboard,
   Home,
   Users,
-  ListTodo,
   CalendarDays,
   Settings,
   LogOut,
   HelpCircle,
-  CalendarRange,
-  FileText,
   Sparkles,
   BookOpen,
   AlertTriangle,
@@ -110,11 +107,9 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
       label: t("nav.dashboard"),
       end: true,
     },
+    // Availability, Reservations, Tasks and Reports now live inside each
+    // property's detail page (tabs), so they are no longer top-level nav items.
     { to: "/properties", icon: Home, label: t("nav.properties") },
-    { to: "/availability", icon: CalendarRange, label: t("nav.availability") },
-    { to: "/reservations", icon: CalendarDays, label: t("nav.reservations") },
-    { to: "/tasks", icon: ListTodo, label: t("nav.tasks") },
-    { to: "/reports", icon: FileText, label: t("nav.reports") },
     { to: "/team", icon: Users, label: t("nav.team") },
     { to: "/settings", icon: Settings, label: t("nav.settings") },
   ];
@@ -132,10 +127,9 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
       label: t("nav.dashboard"),
       end: true,
     },
+    // Availability, Reservations and Tasks now live inside each property's
+    // detail page (tabs), so they are no longer top-level nav items.
     { to: "/properties", icon: Home, label: t("nav.properties") },
-    { to: "/availability", icon: CalendarRange, label: t("nav.availability") },
-    { to: "/reservations", icon: CalendarDays, label: t("nav.reservations") },
-    { to: "/tasks", icon: ListTodo, label: t("nav.tasks") },
     { to: "/team", icon: Users, label: t("nav.team") },
     { to: "/rentals", icon: Sparkles, label: t("nav.rentals") },
     { to: "/guest-books", icon: BookOpen, label: "Livrets" },

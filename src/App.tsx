@@ -10,6 +10,7 @@ import { ComingSoon } from "@/components/ComingSoon";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import Properties from "./pages/Properties";
+import PropertyDetail from "./pages/PropertyDetail";
 import Tasks from "./pages/Tasks";
 import Team from "./pages/Team";
 import CohostDetail from "./pages/CohostDetail";
@@ -143,6 +144,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppLayout><Properties /></AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/properties/:id"
+              element={
+                <ProtectedRoute>
+                  <AppLayout><PropertyDetail /></AppLayout>
                 </ProtectedRoute>
               }
             />

@@ -41,7 +41,7 @@ const VIEW_OPTIONS: { value: ViewMode; label: string }[] = [
 const LONG_VIEW_MONTHS = 1; // nombre de mois affichés en mode long verrouillé
 const CONFIRMED_STATUSES = ["confirmed", "in_progress", "completed"];
 
-export default function Availability() {
+export default function Availability({ propertyId, embedded = false }: { propertyId?: string; embedded?: boolean } = {}) {
   const { t } = useTranslation();
   const [activeCats, setActiveCats] = useState<string[]>([]);
   const [startDate, setStartDate] = useState<Date>(startOfDay(new Date()));
@@ -52,7 +52,7 @@ export default function Availability() {
   const [to, setTo] = useState(format(addDays(new Date(), 7), "yyyy-MM-dd"));
   const [icalProperty, setIcalProperty] = useState<Property | null>(null);
 
-  const { data: properties = [] } = useQuery({
+  const { data: allProperties = [] } = useQuery({
     queryKey: ["avail-properties"],
     queryFn: async () => {
       // Previously: .eq("status", "active"). The live schema doesn't have a
@@ -87,6 +87,14 @@ export default function Availability() {
       return rows.filter((p) => p.active !== false) as Property[];
     },
   });
+
+  // When rendered scoped to a single property (e.g. inside the property detail
+  // tabs), narrow the list to just that property so every downstream view
+  // (calendar grid + availability list) only shows it.
+  const properties = useMemo(
+    () => (propertyId ? allProperties.filter((p) => p.id === propertyId) : allProperties),
+    [allProperties, propertyId],
+  );
 
   // Visible date window — derive from the current view so we don't ask the
   // server for the entire reservation history just to color a single month.
@@ -215,35 +223,39 @@ export default function Availability() {
     setActiveCats((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      <div>
-        <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
-          <CalendarRange className="h-6 w-6" /> {t("availability.title")}
-        </h1>
-        <p className="text-sm text-muted-foreground">{t("availability.subtitle")}</p>
-      </div>
-
-      {/* Category filter */}
-      <Card className="p-4">
-        <p className="text-xs uppercase text-muted-foreground mb-2">{t("availability.filterByPackage")}</p>
-        <div className="flex flex-wrap gap-2">
-          {PROPERTY_CATEGORIES.map((c) => (
-            <Badge
-              key={c.value}
-              variant={activeCats.includes(c.value) ? "default" : "outline"}
-              className="cursor-pointer"
-              onClick={() => toggleCat(c.value)}
-            >
-              {c.emoji} {t(`properties.categoryLabels.${c.value}`)}
-            </Badge>
-          ))}
-          {activeCats.length > 0 && (
-            <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setActiveCats([])}>
-              {t("availability.clear")}
-            </Button>
-          )}
+    <div className={cn("space-y-6", !embedded && "max-w-7xl mx-auto")}>
+      {!embedded && (
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
+            <CalendarRange className="h-6 w-6" /> {t("availability.title")}
+          </h1>
+          <p className="text-sm text-muted-foreground">{t("availability.subtitle")}</p>
         </div>
-      </Card>
+      )}
+
+      {/* Category filter — only useful when browsing all properties */}
+      {!embedded && (
+        <Card className="p-4">
+          <p className="text-xs uppercase text-muted-foreground mb-2">{t("availability.filterByPackage")}</p>
+          <div className="flex flex-wrap gap-2">
+            {PROPERTY_CATEGORIES.map((c) => (
+              <Badge
+                key={c.value}
+                variant={activeCats.includes(c.value) ? "default" : "outline"}
+                className="cursor-pointer"
+                onClick={() => toggleCat(c.value)}
+              >
+                {c.emoji} {t(`properties.categoryLabels.${c.value}`)}
+              </Badge>
+            ))}
+            {activeCats.length > 0 && (
+              <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setActiveCats([])}>
+                {t("availability.clear")}
+              </Button>
+            )}
+          </div>
+        </Card>
+      )}
 
       <Tabs defaultValue="calendar">
         <TabsList>
