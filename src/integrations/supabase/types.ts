@@ -997,6 +997,51 @@ export type Database = {
           },
         ]
       }
+      property_members: {
+        Row: {
+          assigned_by: string | null
+          created_at: string
+          id: string
+          organization_id: string
+          property_id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          assigned_by?: string | null
+          created_at?: string
+          id?: string
+          organization_id: string
+          property_id: string
+          role: string
+          user_id: string
+        }
+        Update: {
+          assigned_by?: string | null
+          created_at?: string
+          id?: string
+          organization_id?: string
+          property_id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_members_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_members_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rental_items: {
         Row: {
           active: boolean | null
@@ -1522,6 +1567,7 @@ export type Database = {
         | { Args: never; Returns: boolean }
         | { Args: { _user_id: string }; Returns: boolean }
       my_org_id: { Args: never; Returns: string }
+      property_org_id: { Args: { _property_id: string }; Returns: string }
     }
     Enums: {
       [_ in never]: never

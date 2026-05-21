@@ -36,7 +36,9 @@ A logged-in user who types a URL for a page they shouldn't see will still render
 
 ### Tables the code references but the live DB does NOT have
 
-`ad_banners`, `ad_impressions`, `booking_requests`, `coupon_redemptions`, `guest_albums`, `inventory_items`, `inventory_movements`, `message_templates`, `notifications`, `partner_coupons`, `partner_services`, `property_approval_events`, `property_members`, `public_properties`, `reservation_rentals`, `reservations`, `user_roles`.
+`ad_banners`, `ad_impressions`, `booking_requests`, `coupon_redemptions`, `guest_albums`, `inventory_items`, `inventory_movements`, `message_templates`, `notifications`, `partner_coupons`, `partner_services`, `property_approval_events`, `public_properties`, `reservation_rentals`, `reservations`, `user_roles`.
+
+**Provisioned May 2026 hotfix:** `property_members` — generic property↔profile assignment table (id, organization_id, property_id, user_id, role, created_at) added via migration `20260517130000`. Complements `property_cohosts` (cohost-specific, carries `permissions[]`). Used by Properties.tsx assign-to-property dialog, Team.tsx staff assignments, and CohostDetail.tsx. Admin-only writes; org-wide reads.
 
 **Recently added (Task Ops Pack, May 2026):** `task_photos`, `cleaning_checklists`, `maintenance_tickets` are now provisioned via migrations `20260517100000`–`20260517100300`, plus storage buckets `task-photos` (private) and `maintenance-photos` (public). The features that depend on these tables — task photo proof, cleaning checklists, maintenance tickets queue, "report a problem" from the employee agenda — now work end-to-end.
 
