@@ -34,6 +34,10 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import {
+  detachPropertyFromOrganization,
+  isUnassignedPropertyOrgName,
+} from "@/lib/propertyOrgFallback";
 
 const PROPERTY_TYPES = ["apartment", "house", "villa", "studio", "room", "other"];
 
@@ -209,7 +213,11 @@ export function OrgPropertiesTab({
           .map((p) => ({
             id: p.id,
             name: p.name,
-            orgName: p.org_id ? orgMap.get(p.org_id) ?? "—" : unassignedLabel,
+            orgName: p.org_id
+              ? isUnassignedPropertyOrgName(orgMap.get(p.org_id))
+                ? unassignedLabel
+                : orgMap.get(p.org_id) ?? "—"
+              : unassignedLabel,
           })),
       );
     } catch (e: unknown) {
@@ -321,9 +329,20 @@ export function OrgPropertiesTab({
     if (!confirmDelete) return;
     setBusy(true);
     try {
-      const { error } = await sb.from("properties").delete().eq("id", confirmDelete.id);
-      if (error) throw error;
-      toast({ title: t("properties.deleted", { defaultValue: "Property deleted" }) });
+      await detachPropertyFromOrganization(confirmDelete.id);
+
+      const [memberCleanup, cohostCleanup] = await Promise.all([
+        sb.from("property_members").delete().eq("property_id", confirmDelete.id),
+        sb.from("property_cohosts").delete().eq("property_id", confirmDelete.id),
+      ]);
+      if (memberCleanup.error) throw memberCleanup.error;
+      if (cohostCleanup.error) throw cohostCleanup.error;
+
+      toast({
+        title: t("orgProperties.removed", {
+          defaultValue: "Property removed from organization",
+        }),
+      });
       setConfirmDelete(null);
       load();
       onChanged?.();
@@ -411,7 +430,9 @@ export function OrgPropertiesTab({
                   variant="outline"
                   className="text-destructive"
                   onClick={() => setConfirmDelete(p)}
-                  aria-label={t("common.delete", { defaultValue: "Delete" })}
+                  aria-label={t("orgProperties.remove", {
+                    defaultValue: "Remove from organization",
+                  })}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
@@ -581,14 +602,15 @@ export function OrgPropertiesTab({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t("orgProperties.deleteTitle", {
+              {t("orgProperties.removeTitle", {
                 name: confirmDelete?.name ?? "",
-                defaultValue: `Delete ${confirmDelete?.name ?? "this property"}?`,
+                defaultValue: `Remove ${confirmDelete?.name ?? "this property"} from this organization?`,
               })}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {t("orgProperties.deleteBody", {
-                defaultValue: "This permanently deletes the property and cannot be undone.",
+              {t("orgProperties.removeBody", {
+                defaultValue:
+                  "This detaches the property from the organization without deleting the property record.",
               })}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -599,7 +621,9 @@ export function OrgPropertiesTab({
               disabled={busy}
               className="bg-rose-600 hover:bg-rose-700"
             >
-              {busy ? t("common.loading") : t("common.delete")}
+              {busy
+                ? t("common.loading")
+                : t("orgProperties.remove", { defaultValue: "Remove from organization" })}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
