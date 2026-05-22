@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate, Link } from "react-router-dom";
+import { Navigate, Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
-import { Shield, Trash2, Pause, Play, Pencil, Search, Receipt, Users, Plus, Building2 } from "lucide-react";
+import { Shield, Trash2, Pause, Play, Pencil, Search, Receipt, Users, Plus, Building2, Settings2 } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -43,6 +43,7 @@ type OrgWithStats = Org & {
 
 export default function SuperAdmin() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { user, loading } = useAuth();
   const [isSuper, setIsSuper] = useState<boolean | null>(null);
   const [orgs, setOrgs] = useState<OrgWithStats[]>([]);
@@ -361,7 +362,16 @@ export default function SuperAdmin() {
               filtered.map((org) => (
                 <div
                   key={org.id}
-                  className="flex flex-wrap items-center gap-4 py-4"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`/super-admin/orgs/${org.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      navigate(`/super-admin/orgs/${org.id}`);
+                    }
+                  }}
+                  className="-mx-2 flex cursor-pointer flex-wrap items-center gap-4 rounded-lg px-2 py-4 transition-colors hover:bg-muted/50"
                   data-testid="org-row"
                   data-org-id={org.id}
                   data-org-name={org.name}
@@ -388,6 +398,7 @@ export default function SuperAdmin() {
                     <div className="flex flex-wrap items-center gap-2">
                       <Link
                         to={`/super-admin/orgs/${org.id}`}
+                        onClick={(e) => e.stopPropagation()}
                         className="truncate font-semibold text-secondary hover:text-primary hover:underline"
                       >
                         {org.name}
@@ -421,56 +432,14 @@ export default function SuperAdmin() {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => openInvite(org, "admin")}
-                      data-testid="org-invite-admin-button"
+                    <Link
+                      to={`/super-admin/orgs/${org.id}`}
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      <Shield className="mr-1 h-4 w-4" /> Invite admin
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => extendTrial(org, 7)}>
-                      +7j
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => extendTrial(org, 30)}>
-                      +30j
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => openEdit(org)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => toggleSuspend(org)}>
-                      {org.suspended ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-                    </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-destructive"
-                          data-testid="org-delete-trigger"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>{t("superAdmin.deleteTitle", { name: org.name })}</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            {t("superAdmin.deleteDescription")}
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={() => deleteOrg(org)}
-                            className="bg-rose-600 hover:bg-rose-700"
-                            data-testid="org-delete-confirm"
-                          >
-                            {t("common.delete")}
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                      <Button size="sm" data-testid="org-manage-button">
+                        <Settings2 className="mr-1 h-4 w-4" /> {t("superAdmin.manage", { defaultValue: "Manage" })}
+                      </Button>
+                    </Link>
                   </div>
                 </div>
               ))

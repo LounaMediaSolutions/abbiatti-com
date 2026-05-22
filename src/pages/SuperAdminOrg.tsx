@@ -1,17 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
-import { Navigate, Link, useParams } from "react-router-dom";
+import { Navigate, Link, useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   ArrowLeft,
   Building2,
   Calendar,
+  Home,
   Mail,
   Pause,
+  Pencil,
   Play,
   Shield,
+  Trash2,
+  UserCog,
   UserPlus,
   Users,
+  Briefcase,
 } from "lucide-react";
+import { toHexColor } from "@/lib/brandColor";
+import { OrgPropertiesTab } from "@/components/OrgPropertiesTab";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { isSuperAdminUser } from "@/lib/access";
@@ -28,6 +35,24 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
 
 type Org = {
@@ -58,8 +83,20 @@ const EMPLOYEE_ROLES = new Set([
   "staff",
 ]);
 
+const EMPLOYEE_ROLE_OPTIONS = [
+  "cleaner",
+  "driver",
+  "decorator",
+  "maintenance",
+  "staff",
+] as const;
+
+// Which category each tab manages, and the role to invite for it.
+type TeamKind = "admin" | "cohost" | "employee";
+
 export default function SuperAdminOrg() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { t } = useTranslation();
   const { user, loading } = useAuth();
   const [isSuper, setIsSuper] = useState<boolean | null>(null);
@@ -69,12 +106,31 @@ export default function SuperAdminOrg() {
   const [propertyCount, setPropertyCount] = useState(0);
   const [fetching, setFetching] = useState(true);
 
-  // Invite-admin dialog
+  // Invite dialog (admins / cohosts / employees)
   const [inviting, setInviting] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteKind, setInviteKind] = useState<TeamKind>("admin");
+  const [inviteEmpRole, setInviteEmpRole] = useState<string>("cleaner");
   const [inviteEmail, setInviteEmail] = useState("");
   const [invitePassword, setInvitePassword] = useState("");
   const [inviteFullName, setInviteFullName] = useState("");
+
+  // Remove-from-org confirmation
+  const [confirmRemove, setConfirmRemove] = useState<Member | null>(null);
+  const [removing, setRemoving] = useState(false);
+
+  // Edit-organization dialog
+  const [editOpen, setEditOpen] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editColor, setEditColor] = useState("#1e40af");
+  const [editMaxCohosts, setEditMaxCohosts] = useState(0);
+  const [editMaxEmployees, setEditMaxEmployees] = useState(0);
+  const [editTrialEndsAt, setEditTrialEndsAt] = useState("");
+
+  // Delete-organization confirmation
+  const [confirmDeleteOrg, setConfirmDeleteOrg] = useState(false);
+  const [deletingOrg, setDeletingOrg] = useState(false);
 
   useEffect(() => {
     if (loading) return;
@@ -158,6 +214,15 @@ export default function SuperAdminOrg() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuper, id]);
 
+  const openInviteFor = (kind: TeamKind) => {
+    setInviteKind(kind);
+    if (kind === "employee") setInviteEmpRole("cleaner");
+    setInviteEmail("");
+    setInvitePassword("");
+    setInviteFullName("");
+    setInviteOpen(true);
+  };
+
   const sendInvite = async () => {
     if (!org) return;
     if (!inviteEmail.trim()) {
@@ -167,6 +232,12 @@ export default function SuperAdminOrg() {
         variant: "destructive",
       });
     }
+    const role =
+      inviteKind === "admin"
+        ? "admin"
+        : inviteKind === "cohost"
+          ? "cohost"
+          : inviteEmpRole;
     setInviting(true);
     try {
       const { data, error } = await supabase.functions.invoke("create-team-member", {
@@ -176,7 +247,7 @@ export default function SuperAdminOrg() {
           // step entirely if the email already belongs to an existing account.
           password: invitePassword.trim() ? invitePassword : undefined,
           full_name: inviteFullName.trim(),
-          role: "admin",
+          role,
           target_org_id: org.id,
         },
       });
@@ -189,11 +260,13 @@ export default function SuperAdminOrg() {
         return;
       }
       const reusedExisting = (data as { existing_user?: boolean } | null)?.existing_user;
+      // Super-admin admin invites are pending (must be accepted); cohosts and
+      // employees are attached to the org immediately.
       toast({
-        title: "Admin invited",
+        title: t("superAdminOrg.memberAdded", { defaultValue: "Membre ajouté" }),
         description: reusedExisting
-          ? `${inviteEmail} already has an account — they must accept the invitation to manage ${org.name}`
-          : `${inviteEmail} must accept the invitation to join ${org.name}`,
+          ? `${inviteEmail} — compte existant rattaché à ${org.name}`
+          : `${inviteEmail} → ${org.name}`,
       });
       setInviteOpen(false);
       setInviteEmail("");
@@ -202,6 +275,32 @@ export default function SuperAdminOrg() {
       loadOrg();
     } finally {
       setInviting(false);
+    }
+  };
+
+  const removeMember = async () => {
+    if (!confirmRemove) return;
+    setRemoving(true);
+    try {
+      // Detach the user from this organization. Their account remains; they
+      // simply no longer belong to the org. Property-level assignments tied to
+      // this org's properties are also cleared.
+      const { error } = await supabase
+        .from("profiles")
+        .update({ org_id: null } as never)
+        .eq("id", confirmRemove.id);
+      if (error) throw error;
+      toast({ title: t("superAdminOrg.memberRemoved", { defaultValue: "Membre retiré" }) });
+      setConfirmRemove(null);
+      loadOrg();
+    } catch (e: unknown) {
+      toast({
+        title: t("common.error"),
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -224,6 +323,74 @@ export default function SuperAdminOrg() {
         : t("superAdmin.agencySuspended"),
     });
     loadOrg();
+  };
+
+  const openEdit = () => {
+    if (!org) return;
+    setEditName(org.name);
+    setEditColor(toHexColor(org.brand_color));
+    setEditMaxCohosts(org.max_cohosts ?? 0);
+    setEditMaxEmployees(org.max_employees ?? 0);
+    setEditTrialEndsAt(org.trial_ends_at ? org.trial_ends_at.slice(0, 10) : "");
+    setEditOpen(true);
+  };
+
+  const saveEdit = async () => {
+    if (!org) return;
+    setSavingEdit(true);
+    try {
+      const { error } = await supabase
+        .from("organizations")
+        .update({
+          name: editName,
+          brand_color: editColor,
+          max_cohosts: editMaxCohosts,
+          max_employees: editMaxEmployees,
+          trial_ends_at: editTrialEndsAt ? new Date(editTrialEndsAt).toISOString() : null,
+        })
+        .eq("id", org.id);
+      if (error) {
+        return toast({ title: t("common.error"), description: error.message, variant: "destructive" });
+      }
+      toast({ title: t("superAdmin.agencyUpdated", { defaultValue: "Organisation mise à jour" }) });
+      setEditOpen(false);
+      loadOrg();
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const extendTrial = async (days: number) => {
+    if (!org) return;
+    const base =
+      org.trial_ends_at && new Date(org.trial_ends_at) > new Date()
+        ? new Date(org.trial_ends_at)
+        : new Date();
+    base.setDate(base.getDate() + days);
+    const { error } = await supabase
+      .from("organizations")
+      .update({ trial_ends_at: base.toISOString() })
+      .eq("id", org.id);
+    if (error) {
+      return toast({ title: t("common.error"), description: error.message, variant: "destructive" });
+    }
+    toast({ title: t("superAdmin.trialExtended", { days }) });
+    loadOrg();
+  };
+
+  const deleteOrg = async () => {
+    if (!org) return;
+    setDeletingOrg(true);
+    try {
+      const { error } = await supabase.from("organizations").delete().eq("id", org.id);
+      if (error) {
+        return toast({ title: t("common.error"), description: error.message, variant: "destructive" });
+      }
+      toast({ title: t("superAdmin.agencyDeleted", { defaultValue: "Organisation supprimée" }) });
+      navigate("/super-admin");
+    } finally {
+      setDeletingOrg(false);
+    }
   };
 
   const cancelInvitation = async (profileId: string) => {
@@ -260,6 +427,41 @@ export default function SuperAdminOrg() {
     }
     return { admins, cohosts, employees, others };
   }, [members]);
+
+  const renderMemberList = (list: Member[], emptyText: string) => {
+    if (list.length === 0) {
+      return <p className="text-sm text-muted-foreground">{emptyText}</p>;
+    }
+    return (
+      <div className="divide-y">
+        {list.map((m) => (
+          <div
+            key={m.id}
+            className="flex flex-wrap items-center justify-between gap-3 py-3"
+          >
+            <div className="min-w-0">
+              <p className="truncate font-medium text-secondary">
+                {m.full_name || m.email || m.id}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {m.email || "—"}
+                {m.role ? ` · ${m.role}` : ""}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-destructive"
+              onClick={() => setConfirmRemove(m)}
+            >
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              {t("superAdminOrg.remove", { defaultValue: "Remove" })}
+            </Button>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   if (loading || isSuper === null) {
     return (
@@ -307,8 +509,14 @@ export default function SuperAdminOrg() {
           </Button>
         </Link>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => setInviteOpen(true)}>
-            <Shield className="mr-2 h-4 w-4" /> Invite admin
+          <Button variant="outline" onClick={openEdit}>
+            <Pencil className="mr-2 h-4 w-4" /> {t("properties.edit", { defaultValue: "Edit" })}
+          </Button>
+          <Button variant="outline" onClick={() => extendTrial(7)}>
+            +7j
+          </Button>
+          <Button variant="outline" onClick={() => extendTrial(30)}>
+            +30j
           </Button>
           <Button variant="outline" onClick={toggleSuspend}>
             {org.suspended ? (
@@ -320,6 +528,13 @@ export default function SuperAdminOrg() {
                 <Pause className="mr-2 h-4 w-4" /> Suspend
               </>
             )}
+          </Button>
+          <Button
+            variant="outline"
+            className="text-destructive"
+            onClick={() => setConfirmDeleteOrg(true)}
+          >
+            <Trash2 className="mr-2 h-4 w-4" /> {t("common.delete", { defaultValue: "Delete" })}
           </Button>
         </div>
       </div>
@@ -416,6 +631,57 @@ export default function SuperAdminOrg() {
         </Card>
       </div>
 
+      {/* Manage admins / cohosts / employees, all in one place */}
+      <Card className="shadow-card" data-testid="org-team-tabs">
+        <Tabs defaultValue="properties" className="p-5">
+          <TabsList className="flex h-auto w-full flex-wrap justify-start">
+            <TabsTrigger value="properties" className="gap-1.5">
+              <Home className="h-4 w-4" /> Properties ({propertyCount})
+            </TabsTrigger>
+            <TabsTrigger value="admins" className="gap-1.5">
+              <Shield className="h-4 w-4" /> Admins ({grouped.admins.length})
+            </TabsTrigger>
+            <TabsTrigger value="cohosts" className="gap-1.5">
+              <UserCog className="h-4 w-4" /> Cohosts ({grouped.cohosts.length})
+            </TabsTrigger>
+            <TabsTrigger value="employees" className="gap-1.5">
+              <Briefcase className="h-4 w-4" /> Employees ({grouped.employees.length})
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="properties">
+            {org && <OrgPropertiesTab orgId={org.id} onChanged={loadOrg} />}
+          </TabsContent>
+
+          <TabsContent value="admins" className="space-y-3 pt-4">
+            <div className="flex justify-end">
+              <Button size="sm" onClick={() => openInviteFor("admin")}>
+                <UserPlus className="mr-1.5 h-4 w-4" /> Add admin
+              </Button>
+            </div>
+            {renderMemberList(grouped.admins, "No admins yet.")}
+          </TabsContent>
+
+          <TabsContent value="cohosts" className="space-y-3 pt-4">
+            <div className="flex justify-end">
+              <Button size="sm" onClick={() => openInviteFor("cohost")}>
+                <UserPlus className="mr-1.5 h-4 w-4" /> Add cohost
+              </Button>
+            </div>
+            {renderMemberList(grouped.cohosts, "No cohosts yet.")}
+          </TabsContent>
+
+          <TabsContent value="employees" className="space-y-3 pt-4">
+            <div className="flex justify-end">
+              <Button size="sm" onClick={() => openInviteFor("employee")}>
+                <UserPlus className="mr-1.5 h-4 w-4" /> Add employee
+              </Button>
+            </div>
+            {renderMemberList(grouped.employees, "No employees yet.")}
+          </TabsContent>
+        </Tabs>
+      </Card>
+
       <Card className="shadow-card" data-testid="pending-invitations-card">
         <div className="space-y-3 p-5">
           <div className="flex items-center gap-2">
@@ -460,14 +726,45 @@ export default function SuperAdminOrg() {
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Invite admin to {org.name}</DialogTitle>
+            <DialogTitle>
+              {inviteKind === "admin"
+                ? "Add admin"
+                : inviteKind === "cohost"
+                  ? "Add cohost"
+                  : "Add employee"}{" "}
+              to {org.name}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">
-              The admin will receive an in-app invitation on first login and
-              must <strong>accept</strong> before they can manage this
-              organization.
-            </p>
+            {inviteKind === "admin" ? (
+              <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+                The admin will receive an in-app invitation on first login and
+                must <strong>accept</strong> before they can manage this
+                organization.
+              </p>
+            ) : (
+              <p className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
+                The {inviteKind} will be attached to <strong>{org.name}</strong>{" "}
+                immediately.
+              </p>
+            )}
+            {inviteKind === "employee" && (
+              <div>
+                <Label>Employee role</Label>
+                <Select value={inviteEmpRole} onValueChange={setInviteEmpRole}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EMPLOYEE_ROLE_OPTIONS.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {t(`team.roles.${r}`, { defaultValue: r })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div>
               <Label>Full name</Label>
               <Input
@@ -513,6 +810,129 @@ export default function SuperAdminOrg() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={!!confirmRemove}
+        onOpenChange={(o) => !o && !removing && setConfirmRemove(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("superAdminOrg.removeConfirmTitle", { defaultValue: "Remove from organization?" })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("superAdminOrg.removeConfirmBody", {
+                defaultValue:
+                  "This detaches the member from this organization. Their account is kept and can be re-added later.",
+              })}
+              {confirmRemove ? ` — ${confirmRemove.full_name || confirmRemove.email || ""}` : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removing}>
+              {t("common.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={removeMember} disabled={removing}>
+              {removing ? t("common.loading") : t("superAdminOrg.remove", { defaultValue: "Remove" })}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Edit organization */}
+      <Dialog open={editOpen} onOpenChange={(o) => !o && !savingEdit && setEditOpen(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {t("superAdmin.editDialogTitle", { defaultValue: "Edit organization" })}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>{t("superAdmin.nameLabel", { defaultValue: "Name" })}</Label>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
+            </div>
+            <div>
+              <Label>{t("superAdmin.brandColor", { defaultValue: "Brand color" })}</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="color"
+                  value={editColor}
+                  onChange={(e) => setEditColor(e.target.value)}
+                  className="h-10 w-20"
+                />
+                <Input value={editColor} onChange={(e) => setEditColor(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>{t("superAdmin.maxCohosts", { defaultValue: "Max cohosts" })}</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={editMaxCohosts}
+                  onChange={(e) => setEditMaxCohosts(parseInt(e.target.value) || 0)}
+                />
+              </div>
+              <div>
+                <Label>{t("superAdmin.maxEmployees", { defaultValue: "Max employees" })}</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={editMaxEmployees}
+                  onChange={(e) => setEditMaxEmployees(parseInt(e.target.value) || 0)}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>{t("superAdmin.trialEnd", { defaultValue: "Trial end" })}</Label>
+              <Input
+                type="date"
+                value={editTrialEndsAt}
+                onChange={(e) => setEditTrialEndsAt(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={savingEdit}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={saveEdit} disabled={savingEdit}>
+              {savingEdit ? t("common.loading") : t("common.save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete organization */}
+      <AlertDialog
+        open={confirmDeleteOrg}
+        onOpenChange={(o) => !o && !deletingOrg && setConfirmDeleteOrg(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("superAdmin.deleteTitle", { name: org.name, defaultValue: `Delete ${org.name}?` })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("superAdmin.deleteDescription", {
+                defaultValue:
+                  "This permanently deletes the organization. This action cannot be undone.",
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingOrg}>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={deleteOrg}
+              disabled={deletingOrg}
+              className="bg-rose-600 hover:bg-rose-700"
+            >
+              {deletingOrg ? t("common.loading") : t("common.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

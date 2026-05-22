@@ -10,7 +10,7 @@ import {
   ListTodo,
   FileText,
   Info,
-  UserCog,
+  Users,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,13 +18,14 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { PROPERTY_CATEGORIES } from "./Properties";
-import { PropertyCohostsTab } from "@/components/PropertyCohostsTab";
+import { PropertyTeamTab } from "@/components/PropertyTeamTab";
+import { PropertyOrgCard } from "@/components/PropertyOrgCard";
 import Availability from "./Availability";
 import Reservations from "./Reservations";
 import Tasks from "./Tasks";
 import Reports from "./Reports";
 
-const TABS = ["overview", "availability", "reservations", "tasks", "reports", "cohosts"] as const;
+const TABS = ["overview", "availability", "reservations", "tasks", "reports", "team"] as const;
 type TabValue = (typeof TABS)[number];
 
 export default function PropertyDetail() {
@@ -129,13 +130,14 @@ export default function PropertyDetail() {
           <TabsTrigger value="reports" className="gap-1.5">
             <FileText className="h-4 w-4" /> {t("nav.reports")}
           </TabsTrigger>
-          <TabsTrigger value="cohosts" className="gap-1.5">
-            <UserCog className="h-4 w-4" /> {t("propertyDetail.cohosts", { defaultValue: "Cohosts" })}
+          <TabsTrigger value="team" className="gap-1.5">
+            <Users className="h-4 w-4" /> {t("propertyDetail.team", { defaultValue: "Équipe" })}
           </TabsTrigger>
         </TabsList>
 
         {/* OVERVIEW */}
-        <TabsContent value="overview">
+        <TabsContent value="overview" className="space-y-4">
+          <PropertyOrgCard propertyId={id} orgId={property.org_id} />
           <Card className="p-5 space-y-4">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
               <div>
@@ -213,8 +215,8 @@ export default function PropertyDetail() {
         <TabsContent value="reports">
           <Reports propertyId={id} embedded />
         </TabsContent>
-        <TabsContent value="cohosts">
-          <PropertyCohostsTab propertyId={id} orgId={property.org_id} />
+        <TabsContent value="team">
+          <PropertyTeamTab propertyId={id} orgId={property.org_id} />
         </TabsContent>
       </Tabs>
     </div>

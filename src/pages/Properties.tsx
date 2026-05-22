@@ -472,22 +472,33 @@ const Properties = () => {
     setCanApprove(canManageOrgProperties);
     setCanManageAll(canManageOrgProperties);
 
-    // Visibility filter. Cohost case needs an extra query but the other two
-    // branches do not.
+    // Visibility filter.
+    //
+    // Only the platform super-admin sees every property. Everyone below the
+    // super-admin in the hierarchy (admins, co-admins, cohosts, employees)
+    // sees ONLY the properties they are assigned to — via property_members
+    // (admins/co-admins/employees) or property_cohosts (cohosts) — plus any
+    // property they created themselves (submitted_by). This replaces the old
+    // admin rule that also surfaced every unowned (submitted_by == null)
+    // property, which leaked properties an admin was never assigned to.
     let visibleProps: Property[];
     if (access.isSuperAdmin) {
       visibleProps = props;
-    } else if (isOrgAdminRole(access.role)) {
-      visibleProps = props.filter(
-        (property) => property.submitted_by === user.id || property.submitted_by == null,
-      );
     } else {
-      const { data: cohosted } = await supabase
-        .from("property_cohosts")
-        .select("property_id")
-        .eq("user_id", user.id);
-      const allowedIds = new Set((cohosted ?? []).map((c: { property_id: string }) => c.property_id));
-      visibleProps = props.filter((p) => allowedIds.has(p.id));
+      const [membersRes, cohostsRes] = await Promise.all([
+        supabase.from("property_members").select("property_id").eq("user_id", user.id),
+        supabase.from("property_cohosts").select("property_id").eq("user_id", user.id),
+      ]);
+      const allowedIds = new Set<string>();
+      ((membersRes.data ?? []) as { property_id: string }[]).forEach((r) =>
+        allowedIds.add(r.property_id),
+      );
+      ((cohostsRes.data ?? []) as { property_id: string }[]).forEach((r) =>
+        allowedIds.add(r.property_id),
+      );
+      visibleProps = props.filter(
+        (p) => allowedIds.has(p.id) || p.submitted_by === user.id,
+      );
     }
 
     // Render the cards NOW, before chasing secondary metadata. Cohost picker
@@ -807,19 +818,52 @@ const Properties = () => {
         );
       }
 
+      // Capture the new property's id so we can attach the creating admin to it
+      // (see auto-assignment below).
+      let newPropertyId: string | null = null;
       const { error, removedPrivateFields } = await persistPropertyWithSchemaFallback(
         {
           ...payloadForWrite,
           name: parsed.data.name,
+          // The property belongs to the creator's organization. For an admin
+          // under an organization this is their org; for a super-admin it's the
+          // org they currently have selected.
           org_id: writeOrgId,
           submitted_by: userId,
         },
-        async (nextPayload) => supabase.from("properties").insert([nextPayload] as any),
+        async (nextPayload) => {
+          const res = await supabase
+            .from("properties")
+            .insert([nextPayload] as any)
+            .select("id")
+            .maybeSingle();
+          if (!res.error && res.data) {
+            newPropertyId = (res.data as { id: string }).id;
+          }
+          return { error: res.error };
+        },
       );
       if (removedPrivateFields) {
         setSupportsPrivateFields(false);
       }
       if (error) return toast.error(error.message);
+
+      // Auto-assign the creating org admin (admin / co_admin) to the new
+      // property so it shows up under its Team → Admins tab and remains visible
+      // through the assignment-based scoping. Super-admins see every property
+      // already, so they don't need a membership row.
+      if (newPropertyId && isOrgAdminRole(freshProfile?.role as string | null)) {
+        await supabase.from("property_members").insert([
+          {
+            property_id: newPropertyId,
+            user_id: userId,
+            role: (freshProfile?.role as string) ?? "admin",
+            organization_id: writeOrgId,
+            assigned_by: userId,
+          },
+        ] as never);
+      }
+
       toast.success(t("properties.created"));
     }
     setOpen(false);

@@ -43,6 +43,37 @@ export function isHslChannels(value: string): boolean {
   return /^\s*\d{1,3}\s+\d{1,3}%\s+\d{1,3}%\s*$/.test(value);
 }
 
+/** Convert HSL channels ("H S% L%") to a "#rrggbb" hex string. */
+export function hslChannelsToHex(hsl: string): string {
+  const m = hsl.match(/(\d+)\s+(\d+)%\s+(\d+)%/);
+  if (!m) return "#1e40af";
+  const h = +m[1] / 360;
+  const s = +m[2] / 100;
+  const l = +m[3] / 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => {
+    const k = (n + h * 12) % 12;
+    const c = l - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1)));
+    return Math.round(c * 255)
+      .toString(16)
+      .padStart(2, "0");
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+/**
+ * Normalize any stored brand color (hex OR HSL channels) into a "#rrggbb" hex
+ * string suitable for an <input type="color"> value.
+ */
+export function toHexColor(value: string | null | undefined, fallback = "#1e40af"): string {
+  if (!value) return fallback;
+  const v = value.trim();
+  if (v.startsWith("#") && /^#[0-9a-fA-F]{6}$/.test(v)) return v;
+  if (/^[0-9a-fA-F]{6}$/.test(v)) return `#${v}`;
+  if (isHslChannels(v)) return hslChannelsToHex(v);
+  return fallback;
+}
+
 /**
  * Normalize any stored brand color (hex OR HSL channels) into HSL channels
  * suitable for `--primary`. Returns null when the value can't be parsed, so

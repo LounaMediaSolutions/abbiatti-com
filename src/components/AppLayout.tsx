@@ -110,17 +110,17 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
       label: t("nav.dashboard"),
       end: true,
     },
-    // Availability, Reservations, Tasks and Reports now live inside each
-    // property's detail page (tabs), so they are no longer top-level nav items.
+    // Availability, Reservations, Tasks, Reports and team management (admins,
+    // cohosts, employees) now live inside each property's detail page (tabs),
+    // so they are no longer top-level nav items.
     { to: "/properties", icon: Home, label: t("nav.properties") },
-    { to: "/team", icon: Users, label: t("nav.team") },
     { to: "/settings", icon: Settings, label: t("nav.settings") },
   ];
 
   const superAdminNav = [
     { to: "/super-admin", icon: Building2, label: t("nav.organizations"), end: true },
     { to: "/super-admin/profiles", icon: Users, label: t("nav.profiles") },
-    ...managerNav.slice(1).filter((item) => item.to !== "/team"),
+    ...managerNav.slice(1),
   ];
 
   const cohostNav = [
@@ -130,10 +130,10 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
       label: t("nav.dashboard"),
       end: true,
     },
-    // Availability, Reservations and Tasks now live inside each property's
-    // detail page (tabs), so they are no longer top-level nav items.
+    // Availability, Reservations, Tasks and team management now live inside
+    // each property's detail page (tabs), so they are no longer top-level
+    // nav items.
     { to: "/properties", icon: Home, label: t("nav.properties") },
-    { to: "/team", icon: Users, label: t("nav.team") },
     { to: "/rentals", icon: Sparkles, label: t("nav.rentals") },
     { to: "/guest-books", icon: BookOpen, label: "Livrets" },
     { to: "/tickets", icon: AlertTriangle, label: "Signalements" },

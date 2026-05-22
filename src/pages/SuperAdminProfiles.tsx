@@ -156,6 +156,8 @@ export default function SuperAdminProfiles() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [banningId, setBanningId] = useState<string | null>(null);
   const [confirmBan, setConfirmBan] = useState<ProfileItem | null>(null);
+  // Full organization list so a super-admin can move a user to any org.
+  const [allOrgs, setAllOrgs] = useState<{ id: string; name: string }[]>([]);
 
   // Debounce the search input — wait 300ms after typing stops before re-querying.
   useEffect(() => {
@@ -174,6 +176,17 @@ export default function SuperAdminProfiles() {
     }
     isSuperAdminUser(user.id).then(setIsSuper).catch(() => setIsSuper(false));
   }, [user?.id, loading]);
+
+  // Load every organization once the user is confirmed super-admin, so the
+  // per-profile org picker can move a user to any organization.
+  useEffect(() => {
+    if (!isSuper) return;
+    supabase
+      .from("organizations")
+      .select("id, name")
+      .order("name")
+      .then(({ data }) => setAllOrgs((data ?? []) as { id: string; name: string }[]));
+  }, [isSuper]);
 
   const loadProfiles = async () => {
     setFetching(true);
@@ -274,6 +287,28 @@ export default function SuperAdminProfiles() {
   useEffect(() => {
     if (safePage !== page) setPage(safePage);
   }, [safePage, page]);
+
+  const updateOrg = async (profile: ProfileItem, nextOrgId: string) => {
+    if (!nextOrgId || nextOrgId === profile.org_id) return;
+    setSavingId(profile.id);
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ org_id: nextOrgId } as never)
+        .eq("id", profile.id);
+      if (error) throw error;
+      toast({ title: t("superAdminProfiles.orgUpdated", { defaultValue: "Organisation mise à jour" }) });
+      await loadProfiles();
+    } catch (error: unknown) {
+      toast({
+        title: t("common.error"),
+        description: getErrorMessage(error) ?? "Failed to update organization",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingId(null);
+    }
+  };
 
   const updateRole = async (profile: ProfileItem, nextRole: string) => {
     if (profile.id === user?.id) {
@@ -581,6 +616,32 @@ export default function SuperAdminProfiles() {
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {profile.scope === "org" && (
+                    <div className="space-y-1.5">
+                      <Label>
+                        {t("superAdminProfiles.organization", { defaultValue: "Organisation" })}
+                      </Label>
+                      <Select
+                        value={profile.org_id ?? ""}
+                        onValueChange={(value) => updateOrg(profile, value)}
+                        disabled={isBusy || isSelf}
+                      >
+                        <SelectTrigger>
+                          <SelectValue
+                            placeholder={t("superAdminProfiles.noOrg", { defaultValue: "Aucune organisation" })}
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {allOrgs.map((o) => (
+                            <SelectItem key={o.id} value={o.id}>
+                              {o.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
 
                   {profile.banned ? (
                     <Button
