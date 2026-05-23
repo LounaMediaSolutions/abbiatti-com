@@ -70,7 +70,7 @@ export function PropertyTeamTab({
         .eq("org_id", orgId);
       return (data ?? []) as Profile[];
     },
-    enabled: !!orgId && canManage,
+    enabled: !!orgId,
   });
 
   // Admins + employees are tracked in property_members.
@@ -121,9 +121,9 @@ export function PropertyTeamTab({
     assignedProfiles.find((p) => p.id === id) || orgProfiles.find((p) => p.id === id);
   const nameOf = (id: string) =>
     profileOf(id)?.full_name ||
-    t("properties.cohostAssign.unnamed", { defaultValue: "Sans nom" });
+    t("properties.cohostAssign.unnamed", { defaultValue: "Unnamed cohost" });
   const roleLabel = (role: string | null | undefined) =>
-    role ? t(`roles.${role}`, { defaultValue: role }) : "";
+    role ? t(`team.roles.${role}`, { defaultValue: role }) : "";
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["property-members", propertyId] });
@@ -151,7 +151,7 @@ export function PropertyTeamTab({
         },
       ] as never);
       if (error) throw error;
-      toast.success(t("propertyTeam.added", { defaultValue: "Ajouté" }));
+      toast.success(t("propertyTeam.added", { defaultValue: "Added" }));
       refresh();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : String(e));
@@ -169,7 +169,7 @@ export function PropertyTeamTab({
         .eq("property_id", propertyId)
         .eq("user_id", userId);
       if (error) throw error;
-      toast.success(t("propertyTeam.removed", { defaultValue: "Retiré" }));
+      toast.success(t("propertyTeam.removed", { defaultValue: "Removed" }));
       refresh();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : String(e));
@@ -204,7 +204,7 @@ export function PropertyTeamTab({
           assigned_by: authUser?.id ?? null,
         },
       ] as never);
-      toast.success(t("properties.cohostAssign.saved", { defaultValue: "Cohost assigné" }));
+      toast.success(t("properties.cohostAssign.saved", { defaultValue: "Cohost assignment updated" }));
       refresh();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : String(e));
@@ -228,7 +228,7 @@ export function PropertyTeamTab({
         .eq("property_id", propertyId)
         .eq("user_id", userId)
         .eq("role", "cohost");
-      toast.success(t("propertyTeam.removed", { defaultValue: "Retiré" }));
+      toast.success(t("propertyTeam.removed", { defaultValue: "Removed" }));
       refresh();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : String(e));
@@ -239,69 +239,86 @@ export function PropertyTeamTab({
 
   // ---- per-section derived data -------------------------------------------
 
-  const adminMembers = members.filter((m) => isAdmin(m.role));
-  const employeeMembers = members.filter((m) => isEmployee(m.role));
+  const explicitAdminIds = members.filter((m) => isAdmin(m.role)).map((m) => m.user_id);
+  const explicitEmployeeIds = members.filter((m) => isEmployee(m.role)).map((m) => m.user_id);
+  const explicitCohostIds = cohostIds;
 
-  const adminCandidates = orgProfiles.filter(
-    (p) => isAdmin(p.role) && !adminMembers.some((m) => m.user_id === p.id),
-  );
-  const cohostCandidates = orgProfiles.filter(
-    (p) => p.role === "cohost" && !cohostIds.includes(p.id),
-  );
-  const employeeCandidates = orgProfiles.filter(
-    (p) => isEmployee(p.role) && !employeeMembers.some((m) => m.user_id === p.id),
-  );
+  // Legacy/live deployments may have org-level people but no property-specific
+  // assignment rows yet. In that case, fall back to the org roster for
+  // display so the property tab still surfaces the expected team.
+  const adminIds = orgProfiles.filter((p) => isAdmin(p.role)).map((p) => p.id);
+  const employeeIds = explicitEmployeeIds.length > 0
+    ? explicitEmployeeIds
+    : orgProfiles.filter((p) => isEmployee(p.role)).map((p) => p.id);
+  const displayedCohostIds = explicitCohostIds.length > 0
+    ? explicitCohostIds
+    : orgProfiles.filter((p) => p.role === "cohost").map((p) => p.id);
+
+  const explicitAdminIdSet = new Set(explicitAdminIds);
+  const explicitEmployeeIdSet = new Set(explicitEmployeeIds);
+  const explicitCohostIdSet = new Set(explicitCohostIds);
+
+  const adminCandidates = [] as Profile[];
+  const cohostCandidates = explicitCohostIds.length > 0
+    ? orgProfiles.filter((p) => p.role === "cohost" && !explicitCohostIdSet.has(p.id))
+    : [];
+  const employeeCandidates = explicitEmployeeIds.length > 0
+    ? orgProfiles.filter((p) => isEmployee(p.role) && !explicitEmployeeIdSet.has(p.id))
+    : [];
 
   return (
     <div className="space-y-4 max-w-2xl">
       <Section
         icon={<ShieldCheck className="h-5 w-5 text-primary" />}
         title={t("propertyTeam.admins", { defaultValue: "Admins" })}
-        assignedIds={adminMembers.map((m) => m.user_id)}
+        assignedIds={adminIds}
         candidates={adminCandidates}
-        canManage={canManage}
+        canManage={false}
         busy={busy}
         nameOf={nameOf}
         roleLabel={(id) => roleLabel(profileOf(id)?.role)}
         onAdd={addMember}
         onRemove={removeMember}
-        emptyHint={t("propertyTeam.noAdmins", { defaultValue: "Aucun admin assigné" })}
-        addPlaceholder={t("propertyTeam.addAdmin", { defaultValue: "Ajouter un admin" })}
+        emptyHint={t("propertyTeam.noAdmins", { defaultValue: "No admins assigned" })}
+        addPlaceholder={t("propertyTeam.addAdmin", { defaultValue: "Add an admin" })}
+        removableIds={explicitAdminIdSet}
       />
 
       <Section
         icon={<UserCog className="h-5 w-5 text-primary" />}
         title={t("propertyDetail.cohosts", { defaultValue: "Cohosts" })}
-        assignedIds={cohostIds}
+        assignedIds={displayedCohostIds}
         candidates={cohostCandidates}
-        canManage={canManage}
+        canManage={canManage && explicitCohostIds.length > 0}
         busy={busy}
         nameOf={nameOf}
         roleLabel={() => ""}
         onAdd={addCohost}
         onRemove={removeCohost}
-        emptyHint={t("properties.cohostAssign.unassigned", { defaultValue: "— Non assigné —" })}
-        addPlaceholder={t("propertyTeam.addCohost", { defaultValue: "Ajouter un cohost" })}
+        emptyHint={t("properties.cohostAssign.unassigned", { defaultValue: "— Unassigned —" })}
+        addPlaceholder={t("propertyTeam.addCohost", { defaultValue: "Add a cohost" })}
+        removableIds={explicitCohostIdSet}
       />
 
       <Section
         icon={<Briefcase className="h-5 w-5 text-primary" />}
-        title={t("propertyTeam.employees", { defaultValue: "Employés" })}
-        assignedIds={employeeMembers.map((m) => m.user_id)}
+        title={t("propertyTeam.employees", { defaultValue: "Employees" })}
+        assignedIds={employeeIds}
         candidates={employeeCandidates}
-        canManage={canManage}
+        canManage={canManage && explicitEmployeeIds.length > 0}
         busy={busy}
         nameOf={nameOf}
         roleLabel={(id) => roleLabel(profileOf(id)?.role)}
         onAdd={addMember}
         onRemove={removeMember}
-        emptyHint={t("propertyTeam.noEmployees", { defaultValue: "Aucun employé assigné" })}
-        addPlaceholder={t("propertyTeam.addEmployee", { defaultValue: "Ajouter un employé" })}
+        emptyHint={t("propertyTeam.noEmployees", { defaultValue: "No employees assigned" })}
+        addPlaceholder={t("propertyTeam.addEmployee", { defaultValue: "Add an employee" })}
+        removableIds={explicitEmployeeIdSet}
       />
 
       {!canManage && (
         <Badge variant="secondary" className="text-[11px]">
-          {t("propertyDetail.readOnly", { defaultValue: "Lecture seule" })}
+          {t("propertyDetail.readOnly", { defaultValue: "Read-only" })}
         </Badge>
       )}
     </div>
@@ -321,6 +338,7 @@ function Section({
   onRemove,
   emptyHint,
   addPlaceholder,
+  removableIds,
 }: {
   icon: React.ReactNode;
   title: string;
@@ -334,6 +352,7 @@ function Section({
   onRemove: (id: string) => void;
   emptyHint: string;
   addPlaceholder: string;
+  removableIds?: Set<string>;
 }) {
   const { t } = useTranslation();
   const [toAdd, setToAdd] = useState<string>("");
@@ -365,14 +384,14 @@ function Section({
                     {rl}
                   </Badge>
                 )}
-                {canManage && (
+                {canManage && removableIds?.has(id) && (
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7 ml-auto shrink-0 text-muted-foreground hover:text-destructive"
                     disabled={busy}
                     onClick={() => onRemove(id)}
-                    aria-label={t("propertyTeam.remove", { defaultValue: "Retirer" })}
+                    aria-label={t("propertyTeam.remove", { defaultValue: "Remove" })}
                   >
                     <X className="h-4 w-4" />
                   </Button>
@@ -392,13 +411,13 @@ function Section({
             <SelectContent>
               {candidates.length === 0 ? (
                 <SelectItem value="__none__" disabled>
-                  {t("propertyTeam.noCandidates", { defaultValue: "Personne de disponible" })}
+                  {t("propertyTeam.noCandidates", { defaultValue: "No available people" })}
                 </SelectItem>
               ) : (
                 candidates.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.full_name ||
-                      t("properties.cohostAssign.unnamed", { defaultValue: "Sans nom" })}
+                      t("properties.cohostAssign.unnamed", { defaultValue: "Unnamed cohost" })}
                   </SelectItem>
                 ))
               )}
@@ -413,7 +432,7 @@ function Section({
             }}
           >
             <Plus className="h-4 w-4 mr-1" />
-            {t("propertyTeam.add", { defaultValue: "Ajouter" })}
+            {t("propertyTeam.add", { defaultValue: "Add" })}
           </Button>
         </div>
       )}

@@ -95,7 +95,7 @@ export default function PropertyDetail() {
           onClick={() => navigate("/properties")}
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
-          {t("propertyDetail.backToProperties", { defaultValue: "Retour aux propriétés" })}
+          {t("propertyDetail.backToProperties", { defaultValue: "Back to properties" })}
         </Button>
         <div className="flex items-start gap-3">
           <div className="h-11 w-11 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
@@ -116,7 +116,7 @@ export default function PropertyDetail() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="flex w-full flex-wrap h-auto justify-start">
           <TabsTrigger value="overview" className="gap-1.5">
-            <Info className="h-4 w-4" /> {t("propertyDetail.overview", { defaultValue: "Aperçu" })}
+            <Info className="h-4 w-4" /> {t("propertyDetail.overview", { defaultValue: "Overview" })}
           </TabsTrigger>
           <TabsTrigger value="availability" className="gap-1.5">
             <CalendarRange className="h-4 w-4" /> {t("nav.availability")}
@@ -131,7 +131,7 @@ export default function PropertyDetail() {
             <FileText className="h-4 w-4" /> {t("nav.reports")}
           </TabsTrigger>
           <TabsTrigger value="team" className="gap-1.5">
-            <Users className="h-4 w-4" /> {t("propertyDetail.team", { defaultValue: "Équipe" })}
+            <Users className="h-4 w-4" /> {t("propertyDetail.team", { defaultValue: "Team" })}
           </TabsTrigger>
         </TabsList>
 
