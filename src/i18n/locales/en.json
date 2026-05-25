@@ -503,6 +503,53 @@
         "desc": "French, English, Arabic",
         "s1": "Use the language switcher in the top right.",
         "s2": "The interface flips to RTL automatically for Arabic."
+      },
+      "guestbook": {
+        "title": "Digital guestbook",
+        "desc": "Collect guest reviews",
+        "s1": "Go to Guestbooks → Create a guestbook for a property.",
+        "s2": "Share the public link or QR code with your guest at the end of their stay.",
+        "s3": "The guest leaves a rating and comment in seconds.",
+        "s4": "Browse all reviews and the average rating from the dashboard."
+      },
+      "tickets": {
+        "title": "Issues & Tickets",
+        "desc": "Problems and incidents reported by guests",
+        "s1": "Generate a reporting link from the Tickets tab for each property.",
+        "s2": "The guest scans the QR code and reports a problem with photos.",
+        "s3": "The ticket appears in Tickets — assign it to a team member.",
+        "s4": "Track the progress (open → in progress → resolved) and notify the guest."
+      },
+      "showcase": {
+        "title": "Public showcase",
+        "desc": "Simple web page for your listings",
+        "s1": "Enable the showcase from Settings → Public showcase.",
+        "s2": "Pick the properties to display and personalize the layout.",
+        "s3": "Share the public link on your social networks or WhatsApp.",
+        "s4": "Visitors can send a reservation request directly."
+      },
+      "bookings": {
+        "title": "Reservation requests",
+        "desc": "Requests received via the showcase",
+        "s1": "New requests appear in Reservation requests.",
+        "s2": "View the details (dates, guests, message) and contact the customer.",
+        "s3": "Accept or decline the request, then create the official reservation.",
+        "s4": "The customer is notified automatically by WhatsApp or email."
+      },
+      "whatsapp": {
+        "title": "WhatsApp reminders",
+        "desc": "Pre-filled links to communicate quickly",
+        "s1": "From a reservation, click \"Send a WhatsApp reminder\".",
+        "s2": "Pick the message type (arrival, access code, departure, review).",
+        "s3": "WhatsApp opens with the message pre-filled in the guest's language.",
+        "s4": "Check and send — the message is personalized with stay details."
+      },
+      "reports": {
+        "title": "Reports & Statistics",
+        "desc": "Analyze your activity",
+        "s1": "Open the Reports page to see your performance.",
+        "s2": "Filter by period (week, month, year) and by property.",
+        "s3": "Export data to CSV for accounting or archives."
       }
     },
     "faq": {

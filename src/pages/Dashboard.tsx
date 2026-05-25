@@ -38,11 +38,27 @@ const Dashboard = () => {
         getUserAccess(user.id),
         supabase
           .from("profiles")
-          .select("full_name, org_id, pending_org_id")
+          .select("full_name, org_id, pending_org_id, role, invitation_status")
           .eq("id", user.id)
           .maybeSingle(),
       ]);
       const profile = profileRes.data;
+
+      // ─── TEMP DEBUG ─── remove once the admin-properties bug is resolved.
+      // Logs the live state we use to decide what shows on the dashboard.
+      console.log("[DASHBOARD DEBUG] user.id:", user.id);
+      console.log("[DASHBOARD DEBUG] user.email:", user.email);
+      console.log("[DASHBOARD DEBUG] profile row:", profile);
+      console.log("[DASHBOARD DEBUG] access:", access);
+
+      // What does the user actually have visibility into right now? This query
+      // hits the same RLS as the org-scoped one below — if it returns rows but
+      // the org-scoped one returns 0, we know the org_id values don't match.
+      const allVisible = await supabase
+        .from("properties")
+        .select("id, name, org_id, submitted_by");
+      console.log("[DASHBOARD DEBUG] properties visible via RLS (no filter):", allVisible.data);
+      console.log("[DASHBOARD DEBUG] properties visible via RLS - error:", allVisible.error);
 
       let propsCount = 0;
       let teamCount = 0;
@@ -58,13 +74,17 @@ const Dashboard = () => {
       if (access.isAdmin) {
         const effectiveOrgId =
           profile?.org_id ?? profile?.pending_org_id ?? null;
+        console.log("[DASHBOARD DEBUG] effectiveOrgId used for admin query:", effectiveOrgId);
         if (effectiveOrgId) {
-          const { data: orgProps } = await supabase
+          const orgResult = await supabase
             .from("properties")
-            .select("id, name, city, country, submitted_by")
+            .select("id, name, city, country, submitted_by, org_id")
             .eq("org_id", effectiveOrgId)
             .order("name");
-          visibleProperties = (orgProps ?? []) as DashboardProperty[];
+          console.log("[DASHBOARD DEBUG] org-scoped properties result:", orgResult);
+          visibleProperties = (orgResult.data ?? []) as DashboardProperty[];
+        } else {
+          console.log("[DASHBOARD DEBUG] effectiveOrgId is null → admin sees nothing.");
         }
       } else if (access.isCohost) {
         const [membersRes, cohostsRes, createdRes] = await Promise.all([

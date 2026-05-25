@@ -471,22 +471,46 @@ const Properties = () => {
     ]);
     const props = propsResult;
 
+    // ─── TEMP DEBUG ─── remove once admin-properties bug is resolved.
+    // We need to confirm three things to diagnose this:
+    //   1. What role + org_id does the live profile row carry?
+    //   2. What does RLS return to this user when we don't filter at all?
+    //   3. Which branch does the visibility filter take?
+    const { data: rawProfile } = await supabase
+      .from("profiles")
+      .select("id, full_name, email, role, org_id, pending_org_id, invitation_status, active")
+      .eq("id", user.id)
+      .maybeSingle();
+    console.log("[PROPERTIES DEBUG] user.id:", user.id);
+    console.log("[PROPERTIES DEBUG] user.email:", user.email);
+    console.log("[PROPERTIES DEBUG] raw profiles row:", rawProfile);
+    console.log("[PROPERTIES DEBUG] getUserAccess() returned:", access);
+    console.log(
+      "[PROPERTIES DEBUG] props count (after RLS, before client filter):",
+      props.length,
+    );
+    console.log(
+      "[PROPERTIES DEBUG] props org_ids (after RLS):",
+      props.map((p) => ({ id: p.id, name: p.name, org_id: p.org_id, submitted_by: p.submitted_by })),
+    );
+
     const canManageOrgProperties = access.isSuperAdmin || isOrgAdminRole(access.role);
     setCanApprove(canManageOrgProperties);
     setCanManageAll(canManageOrgProperties);
 
     // Visibility filter.
     //
-    // Only the platform super-admin sees every property. Everyone below the
-    // super-admin in the hierarchy (admins, co-admins, cohosts, employees)
-    // sees ONLY the properties they are assigned to — via property_members
-    // (admins/co-admins/employees) or property_cohosts (cohosts) — plus any
-    // property they created themselves (submitted_by). This replaces the old
-    // admin rule that also surfaced every unowned (submitted_by == null)
-    // property, which leaked properties an admin was never assigned to.
+    // - Super-admins see every property (global scope).
+    // - Org admins / co-admins see every property under their organization.
+    //   RLS already scopes the SELECT to org_id == profile.org_id, so the
+    //   `props` array is already correct for them — no extra membership filter.
+    // - Cohosts / employees only see properties they're explicitly assigned to
+    //   via property_members or property_cohosts, plus any they created.
     let visibleProps: Property[];
-    if (access.isSuperAdmin) {
+    let debugBranch: string;
+    if (access.isSuperAdmin || (isOrgAdminRole(access.role) && access.orgId)) {
       visibleProps = props;
+      debugBranch = access.isSuperAdmin ? "super-admin (all)" : "org-admin with orgId (all)";
     } else {
       const [membersRes, cohostsRes] = await Promise.all([
         supabase.from("property_members").select("property_id").eq("user_id", user.id),
@@ -502,7 +526,13 @@ const Properties = () => {
       visibleProps = props.filter(
         (p) => allowedIds.has(p.id) || p.submitted_by === user.id,
       );
+      debugBranch = "assignment-based (cohost/employee)";
+      console.log("[PROPERTIES DEBUG] property_members rows:", membersRes.data);
+      console.log("[PROPERTIES DEBUG] property_cohosts rows:", cohostsRes.data);
+      console.log("[PROPERTIES DEBUG] allowedIds size:", allowedIds.size);
     }
+    console.log("[PROPERTIES DEBUG] filter branch:", debugBranch);
+    console.log("[PROPERTIES DEBUG] visibleProps count (final):", visibleProps.length);
 
     // Render the cards NOW, before chasing secondary metadata. Cohost picker
     // and approval-history badges will populate in the background pass below.
