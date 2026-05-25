@@ -27,6 +27,8 @@
     "platform": "Organisations",
     "organizations": "Organisations",
     "admins": "Admins",
+    "cohosts": "Co-hôtes",
+    "employees": "Employés",
     "profiles": "Profils",
     "properties": "Propriétés",
     "reservations": "Réservations",
@@ -176,6 +178,8 @@
       "luxury": "Luxe",
       "budget": "Économique"
     },
+    "adminLabel": "Admin",
+    "cohostLabel": "Cohost",
     "cohostAssign": {
       "label": "Cohost :",
       "placeholder": "Choisir un cohost",
@@ -309,7 +313,9 @@
     "noDate": "Sans date",
     "empty": "Aucune tâche prévue",
     "start": "Commencer",
-    "done": "Terminer"
+    "done": "Terminer",
+    "myProperties": "Mes propriétés",
+    "locationUnknown": "Emplacement non défini"
   },
   "team": {
     "subtitle": "Gérez vos cohosts et votre staff",
@@ -358,7 +364,8 @@
       "decorator": "Décorateur",
       "maintenance": "Maintenance",
       "staff": "Staff"
-    }
+    },
+    "regenerate": "Régénérer le mot de passe"
   },
   "settings": {
     "title": "Paramètres",
@@ -725,6 +732,16 @@
       "perStorageMb": "Par Mo stockage"
     }
   },
+  "superAdminRoles": {
+    "adminsTitle": "Admins",
+    "adminsSubtitle": "Gérez les admins et co-admins de toutes les organisations.",
+    "cohostsTitle": "Co-hôtes",
+    "cohostsSubtitle": "Gérez les co-hôtes de toutes les organisations.",
+    "employeesTitle": "Employés",
+    "employeesSubtitle": "Gérez les agents d'entretien, chauffeurs, décorateurs, maintenance et personnel de toutes les organisations.",
+    "profilesTitle": "Profils",
+    "profilesSubtitle": "Gérez tous les autres utilisateurs — invités, comptes sans rôle et rôles plateforme qui ne sont ni admins, ni co-hôtes, ni employés."
+  },
   "superAdminProfiles": {
     "title": "Profils",
     "subtitle": "Consultez tous les profils et gérez leurs rôles depuis un espace réservé au super-admin.",
@@ -759,7 +776,23 @@
     "selfBanLocked": "Vous ne pouvez pas bannir votre propre compte.",
     "cannotBanSuperAdmin": "Les super-admins ne peuvent pas être bannis.",
     "confirmBanTitle": "Bannir cet utilisateur ?",
-    "confirmBanBody": "Cela révoque l'accès de {{name}}. Il sera déconnecté et ne pourra plus se reconnecter tant qu'il n'est pas débanni."
+    "confirmBanBody": "Cela révoque l'accès de {{name}}. Il sera déconnecté et ne pourra plus se reconnecter tant qu'il n'est pas débanni.",
+    "addMember": "Ajouter un membre",
+    "addMemberHint": "Créez un nouveau compte (ou rattachez un e-mail existant) à une organisation.",
+    "organization": "Organisation",
+    "chooseOrg": "Choisir une organisation",
+    "create": "Créer",
+    "addAnother": "Ajouter un autre",
+    "passwordHint": "Utilisé uniquement pour les nouveaux comptes. Les e-mails existants sont rattachés sans modifier leur mot de passe.",
+    "removeAction": "Retirer de toutes les propriétés",
+    "confirmRemoveTitle": "Retirer de toutes les propriétés ?",
+    "confirmRemoveBody": "Ceci retire {{name}} de toutes les propriétés auxquelles il est affecté. Son compte, son rôle et son organisation restent inchangés — seules les affectations aux propriétés sont supprimées.",
+    "memberAttached": "Utilisateur existant ajouté à l’organisation",
+    "memberRemoved": "Retiré de l’organisation",
+    "removeFailed": "Échec du retrait du membre",
+    "cannotRemoveSuperAdmin": "Les super-admins ne peuvent pas être retirés ici.",
+    "orgRequired": "Veuillez choisir une organisation",
+    "assignmentsCleared": "Affectations aux propriétés supprimées"
   },
   "common": {
     "loading": "Chargement...",
@@ -769,6 +802,21 @@
     "delete": "Supprimer",
     "cancel": "Annuler",
     "back": "Retour",
-    "language": "Langue"
+    "language": "Langue",
+    "done": "Terminé"
+  },
+  "adminRoles": {
+    "cohostsTitle": "Co-hôtes",
+    "cohostsSubtitle": "Gérez les co-hôtes de votre organisation.",
+    "employeesTitle": "Employés",
+    "employeesSubtitle": "Gérez les agents d’entretien, chauffeurs, décorateurs, la maintenance et le personnel de votre organisation."
+  },
+  "orgProfiles": {
+    "properties": "Propriétés",
+    "noProperties": "Aucune attribuée"
+  },
+  "propertyTeam": {
+    "adminsOrgWide": "Les administrateurs ont accès à toutes les propriétés de l’organisation ; ils sont donc gérés au niveau de l’organisation, et non par propriété.",
+    "noEmployeeCandidates": "Aucun employé disponible à affecter. Créez des employés dans « Employés » dans la barre latérale et assurez-vous qu’ils appartiennent à l’organisation de cette propriété."
   }
 }

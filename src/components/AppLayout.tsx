@@ -5,7 +5,6 @@ import {
   LayoutDashboard,
   Home,
   Users,
-  CalendarDays,
   Settings,
   LogOut,
   HelpCircle,
@@ -13,6 +12,10 @@ import {
   BookOpen,
   AlertTriangle,
   Building2,
+  ShieldCheck,
+  UserCog,
+  Briefcase,
+  ListTodo,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -39,6 +42,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!user) {
       setIsStaff(null);
+      setIsCohost(null);
       setIsSuperAdmin(null);
       setDashboardPath(null);
       setOrgLogo(null);
@@ -103,6 +107,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
   const managerDashboardPath =
     dashboardPath === "/super-admin" ? "/super-admin" : "/admin/dashboard";
 
+  // Properties sits directly after each role's home/top item in every sidebar.
   const managerNav = [
     {
       to: managerDashboardPath,
@@ -110,17 +115,23 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
       label: t("nav.dashboard"),
       end: true,
     },
-    // Availability, Reservations, Tasks, Reports and team management (admins,
-    // cohosts, employees) now live inside each property's detail page (tabs),
-    // so they are no longer top-level nav items.
     { to: "/properties", icon: Home, label: t("nav.properties") },
+    // Org-scoped people management for admins. Availability, Reservations,
+    // Tasks, Reports and per-property team management still live inside each
+    // property's detail page (tabs).
+    { to: "/admin/cohosts", icon: UserCog, label: t("nav.cohosts") },
+    { to: "/admin/employees", icon: Briefcase, label: t("nav.employees") },
     { to: "/settings", icon: Settings, label: t("nav.settings") },
   ];
 
   const superAdminNav = [
     { to: "/super-admin", icon: Building2, label: t("nav.organizations"), end: true },
+    { to: "/properties", icon: Home, label: t("nav.properties") },
+    { to: "/super-admin/admins", icon: ShieldCheck, label: t("nav.admins") },
+    { to: "/super-admin/cohosts", icon: UserCog, label: t("nav.cohosts") },
+    { to: "/super-admin/employees", icon: Briefcase, label: t("nav.employees") },
     { to: "/super-admin/profiles", icon: Users, label: t("nav.profiles") },
-    ...managerNav.slice(1),
+    { to: "/settings", icon: Settings, label: t("nav.settings") },
   ];
 
   const cohostNav = [
@@ -139,13 +150,17 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
     { to: "/tickets", icon: AlertTriangle, label: "Signalements" },
   ];
 
+  // Employees get a Properties + Tasks split: "Tasks" is the agenda of every
+  // task assigned to them; "Properties" lets them open an assigned property and
+  // work its tasks. Properties sits directly after the Tasks home item.
   const staffNav = [
     {
       to: "/employee",
-      icon: CalendarDays,
-      label: t("agenda.title"),
+      icon: ListTodo,
+      label: t("nav.tasks"),
       end: true,
     },
+    { to: "/properties", icon: Home, label: t("nav.properties") },
     { to: "/tickets", icon: AlertTriangle, label: "Signalements" },
     { to: "/help", icon: HelpCircle, label: t("nav.help") },
     { to: "/settings", icon: Settings, label: t("nav.settings") },

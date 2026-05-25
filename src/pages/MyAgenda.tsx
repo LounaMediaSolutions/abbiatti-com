@@ -13,6 +13,7 @@ import {
   ListChecks,
   ChevronDown,
   ChevronUp,
+  Home,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -73,6 +74,9 @@ export default function MyAgenda() {
   const [name, setName] = useState("");
   const [avatar, setAvatar] = useState<string | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
+  const [assignedProperties, setAssignedProperties] = useState<
+    { id: string; name: string; city: string | null; country: string | null }[]
+  >([]);
   const [expandedChecklist, setExpandedChecklist] = useState<string | null>(null);
   const [problemTask, setProblemTask] = useState<AgendaTask | null>(null);
   const [problemTitle, setProblemTitle] = useState("");
@@ -85,34 +89,62 @@ export default function MyAgenda() {
   async function load() {
     if (!user) return;
     setLoading(true);
-    const [{ data: profile }, { data: tData }] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("full_name,avatar_url,org_id")
-        .eq("id", user.id)
-        .maybeSingle(),
-      supabase
-        .from("tasks")
-        .select("id,title,type,status,due_at,property_id,guest_name")
-        .eq("assigned_to", user.id)
-        .neq("status", "done")
-        .order("due_at", { ascending: true, nullsFirst: false }),
-    ]);
+    const [{ data: profile }, { data: tData }, { data: memberRows }] =
+      await Promise.all([
+        supabase
+          .from("profiles")
+          .select("full_name,avatar_url,org_id")
+          .eq("id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("tasks")
+          .select("id,title,type,status,due_at,property_id,guest_name")
+          .eq("assigned_to", user.id)
+          .neq("status", "done")
+          .order("due_at", { ascending: true, nullsFirst: false }),
+        // Properties this employee is assigned to (separate from tasks): even
+        // with no open task, an assigned property should show on the dashboard.
+        supabase
+          .from("property_members")
+          .select("property_id")
+          .eq("user_id", user.id),
+      ]);
     setName(profile?.full_name ?? "");
     setAvatar(profile?.avatar_url ?? null);
     setOrgId(profile?.org_id ?? null);
 
-    const propIds = Array.from(
-      new Set((tData ?? []).map((t) => t.property_id).filter(Boolean)),
-    ) as string[];
+    // Resolve property details for both the task list and the assigned-property
+    // section in a single query (union of the two id sets).
+    const taskPropIds = (tData ?? [])
+      .map((t) => t.property_id)
+      .filter(Boolean) as string[];
+    const assignedPropIds = ((memberRows ?? []) as { property_id: string }[])
+      .map((r) => r.property_id)
+      .filter(Boolean);
+    const allPropIds = Array.from(
+      new Set([...taskPropIds, ...assignedPropIds]),
+    );
     let propMap: Record<string, string> = {};
-    if (propIds.length) {
+    let propDetails: Record<
+      string,
+      { id: string; name: string; city: string | null; country: string | null }
+    > = {};
+    if (allPropIds.length) {
       const { data: props } = await supabase
         .from("properties")
-        .select("id,name")
-        .in("id", propIds);
+        .select("id,name,city,country")
+        .in("id", allPropIds);
       propMap = Object.fromEntries((props ?? []).map((p) => [p.id, p.name]));
+      propDetails = Object.fromEntries(
+        (props ?? []).map((p) => [p.id, p]),
+      ) as typeof propDetails;
     }
+    setAssignedProperties(
+      Array.from(new Set(assignedPropIds))
+        .map((id) => propDetails[id])
+        .filter(Boolean)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    );
     setTasks(
       (tData ?? []).map((t) => ({
         ...t,
@@ -380,6 +412,40 @@ export default function MyAgenda() {
           <div className="text-lg font-bold">{name || user?.email}</div>
         </div>
       </div>
+
+      {/* Properties this employee is assigned to. Simple, tappable cards — no
+          dense tables — so the field UI stays easy to use. */}
+      {assignedProperties.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-lg font-bold flex items-center gap-2">
+            <Home className="h-5 w-5" />
+            {t("agenda.myProperties", "My properties")}
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {assignedProperties.map((p) => (
+              <Card
+                key={p.id}
+                className="p-4 flex items-center gap-3"
+                data-testid="agenda-property-card"
+              >
+                <div className="h-12 w-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <Home className="h-6 w-6" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-semibold truncate">{p.name}</div>
+                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                    <MapPin className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">
+                      {[p.city, p.country].filter(Boolean).join(", ") ||
+                        t("agenda.locationUnknown", "Location not set")}
+                    </span>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
 
       <h1 className="text-2xl font-bold flex items-center gap-2">
         <CalendarDays className="h-6 w-6" />

@@ -27,6 +27,8 @@
     "platform": "Organizations",
     "organizations": "Organizations",
     "admins": "Admins",
+    "cohosts": "Cohosts",
+    "employees": "Employees",
     "profiles": "Profiles",
     "properties": "Properties",
     "reservations": "Reservations",
@@ -176,6 +178,8 @@
       "luxury": "Luxury",
       "budget": "Budget"
     },
+    "adminLabel": "Admin",
+    "cohostLabel": "Cohost",
     "cohostAssign": {
       "label": "Cohost:",
       "placeholder": "Select a cohost",
@@ -309,7 +313,9 @@
     "noDate": "No date",
     "empty": "No tasks scheduled",
     "start": "Start",
-    "done": "Complete"
+    "done": "Complete",
+    "myProperties": "My properties",
+    "locationUnknown": "Location not set"
   },
   "team": {
     "subtitle": "Manage your cohosts and staff",
@@ -358,7 +364,8 @@
       "decorator": "Decorator",
       "maintenance": "Maintenance",
       "staff": "Staff"
-    }
+    },
+    "regenerate": "Regenerate password"
   },
   "settings": {
     "title": "Settings",
@@ -678,6 +685,16 @@
       "perStorageMb": "Per MB storage"
     }
   },
+  "superAdminRoles": {
+    "adminsTitle": "Admins",
+    "adminsSubtitle": "Manage organization admins and co-admins across all organizations.",
+    "cohostsTitle": "Cohosts",
+    "cohostsSubtitle": "Manage cohosts across all organizations.",
+    "employeesTitle": "Employees",
+    "employeesSubtitle": "Manage cleaners, drivers, decorators, maintenance and staff across all organizations.",
+    "profilesTitle": "Profiles",
+    "profilesSubtitle": "Manage all other users — guests, unassigned accounts and platform roles that aren't admins, cohosts or employees."
+  },
   "superAdminProfiles": {
     "title": "Profiles",
     "subtitle": "Review every profile and manage roles from one super-admin-only workspace.",
@@ -712,7 +729,23 @@
     "selfBanLocked": "You cannot ban your own account.",
     "cannotBanSuperAdmin": "Super admins cannot be banned.",
     "confirmBanTitle": "Ban this user?",
-    "confirmBanBody": "This will revoke access for {{name}}. They will be logged out and unable to sign back in until unbanned."
+    "confirmBanBody": "This will revoke access for {{name}}. They will be logged out and unable to sign back in until unbanned.",
+    "addMember": "Add member",
+    "addMemberHint": "Create a new account (or attach an existing email) to an organization.",
+    "organization": "Organization",
+    "chooseOrg": "Choose an organization",
+    "create": "Create",
+    "addAnother": "Add another",
+    "passwordHint": "Only used for brand-new accounts. Existing emails are attached without changing their password.",
+    "removeAction": "Unassign from all properties",
+    "confirmRemoveTitle": "Unassign from all properties?",
+    "confirmRemoveBody": "This removes {{name}} from every property they’re assigned to. Their account, role and organization are kept unchanged — only the property assignments are cleared.",
+    "memberAttached": "Existing user added to the organization",
+    "memberRemoved": "Removed from organization",
+    "removeFailed": "Failed to remove member",
+    "cannotRemoveSuperAdmin": "Super admins can’t be removed here.",
+    "orgRequired": "Please choose an organization",
+    "assignmentsCleared": "Property assignments removed"
   },
   "common": {
     "loading": "Loading...",
@@ -722,6 +755,21 @@
     "delete": "Delete",
     "cancel": "Cancel",
     "back": "Back",
-    "language": "Language"
+    "language": "Language",
+    "done": "Done"
+  },
+  "adminRoles": {
+    "cohostsTitle": "Cohosts",
+    "cohostsSubtitle": "Manage the cohosts in your organization.",
+    "employeesTitle": "Employees",
+    "employeesSubtitle": "Manage cleaners, drivers, decorators, maintenance and staff in your organization."
+  },
+  "orgProfiles": {
+    "properties": "Properties",
+    "noProperties": "None assigned"
+  },
+  "propertyTeam": {
+    "adminsOrgWide": "Admins have access to every property in the organization, so they’re managed at the organization level — not per property.",
+    "noEmployeeCandidates": "No employees available to assign. Create employees under \"Employees\" in the sidebar and make sure they belong to this property’s organization."
   }
 }

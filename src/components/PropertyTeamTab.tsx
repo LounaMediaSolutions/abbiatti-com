@@ -32,7 +32,7 @@ const COHOST_PERMISSIONS = [
   "manage_settings",
 ];
 
-type Profile = { id: string; full_name: string | null; role: string | null };
+type Profile = { id: string; full_name: string | null; role: string | null; org_id?: string | null };
 type Member = { user_id: string; role: string };
 
 const isAdmin = (role: string | null | undefined) =>
@@ -57,20 +57,45 @@ export function PropertyTeamTab({
     queryFn: async () => getUserAccess(user!.id),
     enabled: !!user,
   });
-  const canManage = !!(access?.isAdmin || access?.isSuperAdmin);
+  const canManageAll = !!(access?.isAdmin || access?.isSuperAdmin);
 
-  // Candidate people to assign — everyone in the property's organization.
+  // The organization whose people can be assigned to this property. Prefer the
+  // property's own org; fall back to the current manager's org so the picker
+  // still works when a property has no org_id set yet.
+  const effectiveOrgId = orgId ?? access?.orgId ?? null;
+
+  // Candidate people to assign — everyone in that organization.
   const { data: orgProfiles = [] } = useQuery({
-    queryKey: ["org-profiles", orgId],
+    queryKey: ["org-profiles", effectiveOrgId],
     queryFn: async () => {
-      if (!orgId) return [];
+      if (!effectiveOrgId) return [];
       const { data } = await supabase
         .from("profiles")
-        .select("id, full_name, role")
-        .eq("org_id", orgId);
+        .select("id, full_name, role, org_id")
+        .eq("org_id", effectiveOrgId);
       return (data ?? []) as Profile[];
     },
-    enabled: !!orgId,
+    enabled: !!effectiveOrgId,
+  });
+
+  // Dedicated pool of EMPLOYEE-role profiles available to assign. Scoped to the
+  // property's org when known; for a super-admin viewing a property that has no
+  // org set, fall back to every employee they can see so the picker is never
+  // empty just because the property lacks an org_id.
+  const { data: employeePool = [] } = useQuery({
+    queryKey: ["employee-pool", effectiveOrgId, access?.isSuperAdmin ?? false],
+    queryFn: async () => {
+      let q = supabase
+        .from("profiles")
+        .select("id, full_name, role, org_id")
+        .in("role", EMPLOYEE_ROLES as unknown as string[]);
+      // Super-admins can assign any employee on the platform, so they see the
+      // full list. Admins / cohosts are scoped to the property's organization.
+      if (!access?.isSuperAdmin && effectiveOrgId) q = q.eq("org_id", effectiveOrgId);
+      const { data } = await q;
+      return (data ?? []) as Profile[];
+    },
+    enabled: !!effectiveOrgId || !!access?.isSuperAdmin,
   });
 
   // Admins + employees are tracked in property_members.
@@ -98,6 +123,11 @@ export function PropertyTeamTab({
     },
     enabled: !!propertyId,
   });
+
+  // Cohosts assigned to THIS property may manage its employees (but not other
+  // cohosts or admins). Admins & super-admins manage everything.
+  const isPropertyCohost = !!user?.id && cohostIds.includes(user.id);
+  const canManageEmployees = canManageAll || isPropertyCohost;
 
   // Resolve names for everyone currently assigned (works for read-only roles
   // that can't load the full org directory).
@@ -133,9 +163,14 @@ export function PropertyTeamTab({
   // ---- mutations -----------------------------------------------------------
 
   const addMember = async (userId: string) => {
-    if (!orgId) return toast.error("Missing organization");
-    const profile = orgProfiles.find((p) => p.id === userId);
+    const profile =
+      employeePool.find((p) => p.id === userId) ||
+      orgProfiles.find((p) => p.id === userId);
     if (!profile) return;
+    // Use the property's org when it has one; otherwise stamp the membership
+    // with the employee's own org so org-less properties can still be staffed.
+    const assignOrgId = effectiveOrgId ?? profile.org_id ?? null;
+    if (!assignOrgId) return toast.error("Missing organization");
     setBusy(true);
     try {
       const {
@@ -146,7 +181,7 @@ export function PropertyTeamTab({
           property_id: propertyId,
           user_id: userId,
           role: profile.role ?? "staff",
-          organization_id: orgId,
+          organization_id: assignOrgId,
           assigned_by: authUser?.id ?? null,
         },
       ] as never);
@@ -179,7 +214,7 @@ export function PropertyTeamTab({
   };
 
   const addCohost = async (userId: string) => {
-    if (!orgId) return toast.error("Missing organization");
+    if (!effectiveOrgId) return toast.error("Missing organization");
     setBusy(true);
     try {
       const {
@@ -200,7 +235,7 @@ export function PropertyTeamTab({
           property_id: propertyId,
           user_id: userId,
           role: "cohost",
-          organization_id: orgId,
+          organization_id: effectiveOrgId,
           assigned_by: authUser?.id ?? null,
         },
       ] as never);
@@ -243,28 +278,39 @@ export function PropertyTeamTab({
   const explicitEmployeeIds = members.filter((m) => isEmployee(m.role)).map((m) => m.user_id);
   const explicitCohostIds = cohostIds;
 
-  // Legacy/live deployments may have org-level people but no property-specific
-  // assignment rows yet. In that case, fall back to the org roster for
-  // display so the property tab still surfaces the expected team.
-  const adminIds = orgProfiles.filter((p) => isAdmin(p.role)).map((p) => p.id);
-  const employeeIds = explicitEmployeeIds.length > 0
-    ? explicitEmployeeIds
-    : orgProfiles.filter((p) => isEmployee(p.role)).map((p) => p.id);
-  const displayedCohostIds = explicitCohostIds.length > 0
-    ? explicitCohostIds
-    : orgProfiles.filter((p) => p.role === "cohost").map((p) => p.id);
-
   const explicitAdminIdSet = new Set(explicitAdminIds);
   const explicitEmployeeIdSet = new Set(explicitEmployeeIds);
   const explicitCohostIdSet = new Set(explicitCohostIds);
 
+  // Admins are organization-wide (every admin can access every property in the
+  // org), so the Admins section always reflects the org roster and isn't
+  // editable per-property.
+  const adminIds = orgProfiles.filter((p) => isAdmin(p.role)).map((p) => p.id);
+
+  // For managers we show the *actual* per-property assignments so add/remove is
+  // accurate. Read-only viewers fall back to the org roster when a property has
+  // no explicit assignment rows yet, so they still see the implied team.
+  const employeeIds = canManageEmployees
+    ? explicitEmployeeIds
+    : explicitEmployeeIds.length > 0
+      ? explicitEmployeeIds
+      : orgProfiles.filter((p) => isEmployee(p.role)).map((p) => p.id);
+  const displayedCohostIds = canManageAll
+    ? explicitCohostIds
+    : explicitCohostIds.length > 0
+      ? explicitCohostIds
+      : orgProfiles.filter((p) => p.role === "cohost").map((p) => p.id);
+
+  // Candidates are always the org people of that role who aren't already
+  // assigned — computed unconditionally so the very first assignment can be
+  // made (previously these were empty until a row already existed).
   const adminCandidates = [] as Profile[];
-  const cohostCandidates = explicitCohostIds.length > 0
-    ? orgProfiles.filter((p) => p.role === "cohost" && !explicitCohostIdSet.has(p.id))
-    : [];
-  const employeeCandidates = explicitEmployeeIds.length > 0
-    ? orgProfiles.filter((p) => isEmployee(p.role) && !explicitEmployeeIdSet.has(p.id))
-    : [];
+  const cohostCandidates = orgProfiles.filter(
+    (p) => p.role === "cohost" && !explicitCohostIdSet.has(p.id),
+  );
+  const employeeCandidates = employeePool.filter(
+    (p) => !explicitEmployeeIdSet.has(p.id),
+  );
 
   return (
     <div className="space-y-4 max-w-2xl">
@@ -282,6 +328,10 @@ export function PropertyTeamTab({
         emptyHint={t("propertyTeam.noAdmins", { defaultValue: "No admins assigned" })}
         addPlaceholder={t("propertyTeam.addAdmin", { defaultValue: "Add an admin" })}
         removableIds={explicitAdminIdSet}
+        note={t("propertyTeam.adminsOrgWide", {
+          defaultValue:
+            "Admins have access to every property in the organization, so they're managed at the organization level — not per property.",
+        })}
       />
 
       <Section
@@ -289,7 +339,7 @@ export function PropertyTeamTab({
         title={t("propertyDetail.cohosts", { defaultValue: "Cohosts" })}
         assignedIds={displayedCohostIds}
         candidates={cohostCandidates}
-        canManage={canManage && explicitCohostIds.length > 0}
+        canManage={canManageAll}
         busy={busy}
         nameOf={nameOf}
         roleLabel={() => ""}
@@ -305,7 +355,7 @@ export function PropertyTeamTab({
         title={t("propertyTeam.employees", { defaultValue: "Employees" })}
         assignedIds={employeeIds}
         candidates={employeeCandidates}
-        canManage={canManage && explicitEmployeeIds.length > 0}
+        canManage={canManageEmployees}
         busy={busy}
         nameOf={nameOf}
         roleLabel={(id) => roleLabel(profileOf(id)?.role)}
@@ -314,9 +364,17 @@ export function PropertyTeamTab({
         emptyHint={t("propertyTeam.noEmployees", { defaultValue: "No employees assigned" })}
         addPlaceholder={t("propertyTeam.addEmployee", { defaultValue: "Add an employee" })}
         removableIds={explicitEmployeeIdSet}
+        note={
+          canManageEmployees && employeeCandidates.length === 0
+            ? t("propertyTeam.noEmployeeCandidates", {
+                defaultValue:
+                  "No employees available to assign. Create employees under \"Employees\" in the sidebar and make sure they belong to this property's organization.",
+              })
+            : undefined
+        }
       />
 
-      {!canManage && (
+      {!canManageEmployees && (
         <Badge variant="secondary" className="text-[11px]">
           {t("propertyDetail.readOnly", { defaultValue: "Read-only" })}
         </Badge>
@@ -339,6 +397,7 @@ function Section({
   emptyHint,
   addPlaceholder,
   removableIds,
+  note,
 }: {
   icon: React.ReactNode;
   title: string;
@@ -353,6 +412,7 @@ function Section({
   emptyHint: string;
   addPlaceholder: string;
   removableIds?: Set<string>;
+  note?: string;
 }) {
   const { t } = useTranslation();
   const [toAdd, setToAdd] = useState<string>("");
@@ -366,6 +426,8 @@ function Section({
           {assignedIds.length}
         </Badge>
       </div>
+
+      {note && <p className="text-xs text-muted-foreground">{note}</p>}
 
       {assignedIds.length === 0 ? (
         <p className="text-sm text-muted-foreground">{emptyHint}</p>

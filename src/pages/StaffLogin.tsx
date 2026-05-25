@@ -18,6 +18,37 @@ const loginSchema = z.object({
   password: z.string().min(6),
 });
 
+const getAuthorizedRedirectTarget = (
+  target: string | null | undefined,
+  access: Awaited<ReturnType<typeof getUserAccess>> | null,
+) => {
+  if (!target || target === "/welcome") {
+    return access?.dashboardPath ?? "/employee";
+  }
+
+  if (!access) {
+    return target;
+  }
+
+  if (target.startsWith("/super-admin")) {
+    return access.isSuperAdmin ? target : access.dashboardPath;
+  }
+
+  if (target.startsWith("/admin")) {
+    return access.isAdmin ? target : access.dashboardPath;
+  }
+
+  if (target.startsWith("/cohost")) {
+    return access.isCohost ? target : access.dashboardPath;
+  }
+
+  if (target.startsWith("/employee")) {
+    return access.isStaff ? target : access.dashboardPath;
+  }
+
+  return target;
+};
+
 const StaffLogin = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -55,7 +86,11 @@ const StaffLogin = () => {
       data: { user },
     } = await supabase.auth.getUser();
     const access = user ? await getUserAccess(user.id) : null;
-    const target = consumePostLoginRedirect() ?? (redirectTo === "/welcome" ? access?.dashboardPath ?? "/employee" : redirectTo);
+    const target = getAuthorizedRedirectTarget(
+      consumePostLoginRedirect() ??
+        (redirectTo === "/welcome" ? access?.dashboardPath ?? "/employee" : redirectTo),
+      access,
+    );
     navigate(target, { replace: true });
   };
 

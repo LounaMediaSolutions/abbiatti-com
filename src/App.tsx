@@ -36,8 +36,13 @@ import Reports from "./pages/Reports";
 import SuperAdmin from "./pages/SuperAdmin";
 import SuperAdminBilling from "./pages/SuperAdminBilling";
 import SuperAdminOrg from "./pages/SuperAdminOrg";
-import SuperAdminProfiles from "./pages/SuperAdminProfiles";
+import SuperAdminOtherProfiles from "./pages/SuperAdminOtherProfiles";
+import SuperAdminAdmins from "./pages/SuperAdminAdmins";
+import SuperAdminCohosts from "./pages/SuperAdminCohosts";
+import SuperAdminEmployees from "./pages/SuperAdminEmployees";
 import SuperAdminStaff from "./pages/SuperAdminStaff";
+import AdminCohosts from "./pages/AdminCohosts";
+import AdminEmployees from "./pages/AdminEmployees";
 import MyInvoices from "./pages/MyInvoices";
 import GuestPortal from "./pages/GuestPortal";
 import RedeemCoupon from "./pages/RedeemCoupon";
@@ -94,7 +99,31 @@ const App = () => (
               path="/super-admin/profiles"
               element={
                 <ProtectedRoute>
-                  <AppLayout><SuperAdminProfiles /></AppLayout>
+                  <AppLayout><SuperAdminOtherProfiles /></AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/super-admin/admins"
+              element={
+                <ProtectedRoute>
+                  <AppLayout><SuperAdminAdmins /></AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/super-admin/cohosts"
+              element={
+                <ProtectedRoute>
+                  <AppLayout><SuperAdminCohosts /></AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/super-admin/employees"
+              element={
+                <ProtectedRoute>
+                  <AppLayout><SuperAdminEmployees /></AppLayout>
                 </ProtectedRoute>
               }
             />
@@ -120,6 +149,22 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppLayout><Home /></AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/cohosts"
+              element={
+                <ProtectedRoute>
+                  <AppLayout><AdminCohosts /></AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/employees"
+              element={
+                <ProtectedRoute>
+                  <AppLayout><AdminEmployees /></AppLayout>
                 </ProtectedRoute>
               }
             />

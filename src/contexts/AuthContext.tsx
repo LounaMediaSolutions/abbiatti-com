@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { clearPostLoginRedirect } from "@/lib/authRedirect";
 
 interface AuthContextValue {
   user: User | null;
@@ -61,6 +62,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const signOut = async () => {
+    clearPostLoginRedirect();
     await supabase.auth.signOut();
   };
 

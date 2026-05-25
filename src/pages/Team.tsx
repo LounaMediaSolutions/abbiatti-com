@@ -126,7 +126,7 @@ export default function Team() {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role, org_id")
+      .select("role, org_id, pending_org_id")
       .eq("id", user.id)
       .maybeSingle();
     const role = (profile?.role ?? null) as Role | null;
@@ -134,17 +134,27 @@ export default function Team() {
 
     const isSuper = role === "super_admin";
     const isAdminLikeRole = role === "admin" || role === "super_admin" || role === "co_admin";
+    // The admin's effective organization. `org_id` is the real org; fall back
+    // to `pending_org_id` while their org membership is still being set up so
+    // the team list isn't blank for freshly-invited admins.
+    const myOrgId =
+      (profile?.org_id as string | null) ??
+      ((profile as { pending_org_id?: string | null })?.pending_org_id ?? null);
 
     let scopedProperties: Property[] = [];
     if (isSuper) {
       const { data } = await supabase.from("properties").select("id,name,submitted_by").order("name");
       scopedProperties = (data ?? []) as Property[];
     } else if (role === "admin" || role === "co_admin") {
-      const { data } = await supabase
-        .from("properties")
-        .select("id,name,submitted_by")
-        .eq("submitted_by", user.id)
-        .order("name");
+      // Admins manage the whole organization, so the Team page covers every
+      // property in the org (not only ones this admin personally created).
+      const { data } = myOrgId
+        ? await supabase
+            .from("properties")
+            .select("id,name,submitted_by")
+            .eq("org_id", myOrgId)
+            .order("name")
+        : { data: [] as Property[] };
       scopedProperties = (data ?? []) as Property[];
     } else {
       const { data: cohosted } = await supabase
@@ -205,6 +215,29 @@ export default function Team() {
         .select("id,full_name,phone,avatar_url,role");
 
       (allProfiles ?? [])
+        .filter((item: any) => item.role && item.role !== "guest")
+        .forEach((item: any) => {
+          profileMap[item.id] = item as Profile;
+          nextOrgRoles.push({
+            user_id: item.id,
+            role: item.role as Role,
+          });
+        });
+    } else if (role === "admin" || role === "co_admin") {
+      // Admins see EVERY member of their organization — admins, cohosts and
+      // employees (cleaner / driver / decorator / maintenance / staff) — read
+      // straight from `profiles` by org. Previously the list was derived from
+      // property assignments only, so an employee with no property assignment
+      // (e.g. a newly created cleaner) never showed up. RLS already limits
+      // these rows to the caller's own org.
+      const { data: orgProfiles } = myOrgId
+        ? await supabase
+            .from("profiles")
+            .select("id,full_name,phone,avatar_url,role")
+            .eq("org_id", myOrgId)
+        : { data: [] as any[] };
+
+      (orgProfiles ?? [])
         .filter((item: any) => item.role && item.role !== "guest")
         .forEach((item: any) => {
           profileMap[item.id] = item as Profile;

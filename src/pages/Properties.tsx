@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Plus, Home, Pencil, Trash2, MapPin, Building2, Castle, Hotel, Bed, HelpCircle, Link2, Calendar, Sparkles, History, UserCog, ArrowRight } from "lucide-react";
+import { Plus, Home, Pencil, Trash2, MapPin, Building2, Castle, Hotel, Bed, HelpCircle, Link2, Calendar, Sparkles, History, UserCog, ShieldCheck, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -271,6 +271,9 @@ const Properties = () => {
   const [lastEvents, setLastEvents] = useState<Record<string, { event: string; created_at: string; actor_name: string | null; reason: string | null }>>({});
   const [cohosts, setCohosts] = useState<{ id: string; full_name: string | null }[]>([]);
   const [propertyCohosts, setPropertyCohosts] = useState<Record<string, string | null>>({});
+  // Display-only maps: property_id -> resolved admin / cohost names shown on each card.
+  const [propertyAdminNames, setPropertyAdminNames] = useState<Record<string, string[]>>({});
+  const [propertyCohostNames, setPropertyCohostNames] = useState<Record<string, string[]>>({});
   const [savingCohost, setSavingCohost] = useState<string | null>(null);
   const [supportsPrivateFields, setSupportsPrivateFields] = useState(true);
 
@@ -553,6 +556,29 @@ const Properties = () => {
             .in("property_id", visiblePropIds)
         : Promise.resolve({ data: [] });
 
+    // All profiles within the orgs that own the visible properties. The
+    // responsible "admin" for a property is its organization's admin/co-admin
+    // (admins are NOT stored in property_members — that table's CHECK
+    // constraint only allows cohost/employee roles). We also use these to fall
+    // back to org cohosts when a property has no explicit cohost row — the same
+    // derivation the property detail "Team" tab uses, so the card matches it.
+    type OrgProfile = {
+      id: string;
+      full_name: string | null;
+      role: string | null;
+      org_id: string | null;
+    };
+    const orgIdsForVisible = Array.from(
+      new Set(visibleProps.map((p) => p.org_id).filter(Boolean)),
+    );
+    const orgProfilesPromise: Promise<{ data: OrgProfile[] | null }> =
+      orgIdsForVisible.length
+        ? sb
+            .from("profiles")
+            .select("id, full_name, role, org_id")
+            .in("org_id", orgIdsForVisible)
+        : Promise.resolve({ data: [] });
+
     const eventsPromise: Promise<{ data: ApprovalEvent[] | null }> =
       allPropIds.length
         ? sb
@@ -562,27 +588,94 @@ const Properties = () => {
             .order("created_at", { ascending: false })
         : Promise.resolve({ data: [] });
 
-    // Wait for the 3 independent queries in one trip.
-    const [cohostList, assignmentsResult, eventsResult] = await Promise.all([
+    // Wait for the independent queries in one trip.
+    const [cohostList, assignmentsResult, orgProfilesResult, eventsResult] = await Promise.all([
       cohostsPromise,
       assignmentsPromise,
+      orgProfilesPromise,
       eventsPromise,
     ]);
     setCohosts(cohostList);
 
     if (visibleProps.length) {
-      const map: Record<string, string | null> = {};
+      // Index every org profile by id (for name lookup) and bucket the org's
+      // admins / cohosts by org_id (for per-property derivation + fallback).
+      const orgProfiles = (orgProfilesResult.data ?? []) as Array<{
+        id: string;
+        full_name: string | null;
+        role: string | null;
+        org_id: string | null;
+      }>;
+      const profileById = new Map<string, { full_name: string | null }>();
+      const adminIdsByOrg = new Map<string, string[]>();
+      const cohostIdsByOrg = new Map<string, string[]>();
+      orgProfiles.forEach((pr) => {
+        profileById.set(pr.id, { full_name: pr.full_name });
+        if (!pr.org_id) return;
+        if (isOrgAdminRole(pr.role)) {
+          const arr = adminIdsByOrg.get(pr.org_id) ?? [];
+          arr.push(pr.id);
+          adminIdsByOrg.set(pr.org_id, arr);
+        } else if (pr.role === "cohost") {
+          const arr = cohostIdsByOrg.get(pr.org_id) ?? [];
+          arr.push(pr.id);
+          cohostIdsByOrg.set(pr.org_id, arr);
+        }
+      });
+
+      // ── Explicit cohost assignments: property_id -> [user_id] ──
+      const cohostIdsByProp: Record<string, string[]> = {};
+      const singleCohostMap: Record<string, string | null> = {};
       visibleProps.forEach((p) => {
-        map[p.id] = null;
+        cohostIdsByProp[p.id] = [];
+        singleCohostMap[p.id] = null;
       });
       const assignments = (assignmentsResult.data ?? []) as Array<{
         property_id: string;
         user_id: string;
       }>;
       assignments.forEach((a) => {
-        map[a.property_id] = a.user_id;
+        (cohostIdsByProp[a.property_id] ??= []).push(a.user_id);
+        singleCohostMap[a.property_id] = a.user_id;
       });
-      setPropertyCohosts(map);
+      setPropertyCohosts(singleCohostMap);
+
+      // Resolve any assigned cohost whose profile wasn't in the org list
+      // (e.g. restricted visibility) so their name still shows on the card.
+      const missingIds = Array.from(
+        new Set(assignments.map((a) => a.user_id).filter((id) => !profileById.has(id))),
+      );
+      if (missingIds.length) {
+        const { data: extra } = await supabase
+          .from("profiles")
+          .select("id, full_name")
+          .in("id", missingIds);
+        (extra ?? []).forEach((pr: { id: string; full_name: string | null }) =>
+          profileById.set(pr.id, { full_name: pr.full_name }),
+        );
+      }
+
+      const unnamed = t("properties.cohostAssign.unnamed", { defaultValue: "Unnamed" });
+      const namesFor = (ids: string[]) =>
+        ids.map((id) => profileById.get(id)?.full_name || unnamed);
+
+      const adminNamesMap: Record<string, string[]> = {};
+      const cohostNamesMap: Record<string, string[]> = {};
+      visibleProps.forEach((p) => {
+        // Admin(s): the organization's admins / co-admins own the property.
+        const adminIds = p.org_id ? adminIdsByOrg.get(p.org_id) ?? [] : [];
+        adminNamesMap[p.id] = namesFor(adminIds);
+
+        // Cohost(s): explicit per-property assignment first; if none, fall back
+        // to the org's cohosts (matches the property detail "Team" tab).
+        let cohostIds = cohostIdsByProp[p.id] ?? [];
+        if (cohostIds.length === 0 && p.org_id) {
+          cohostIds = cohostIdsByOrg.get(p.org_id) ?? [];
+        }
+        cohostNamesMap[p.id] = namesFor(cohostIds);
+      });
+      setPropertyAdminNames(adminNamesMap);
+      setPropertyCohostNames(cohostNamesMap);
     }
 
     if (allPropIds.length) {
@@ -1335,6 +1428,30 @@ const Properties = () => {
               )}
               <div className="text-xs text-muted-foreground mb-3">
                 {p.bedrooms ?? 0} 🛏 · {p.bathrooms ?? 0} 🛁 · {p.max_guests ?? 0} 👤
+              </div>
+              <div className="space-y-1 mb-3 text-xs" data-testid="property-team-summary">
+                <div className="flex items-start gap-1.5">
+                  <ShieldCheck className="h-3.5 w-3.5 mt-0.5 shrink-0 text-primary" />
+                  <span className="font-medium text-secondary shrink-0">
+                    {t("properties.adminLabel", { defaultValue: "Admin" })}:
+                  </span>
+                  <span className="text-muted-foreground truncate" data-testid="property-admin-name">
+                    {propertyAdminNames[p.id]?.length
+                      ? propertyAdminNames[p.id].join(", ")
+                      : t("properties.cohostAssign.unassigned")}
+                  </span>
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <UserCog className="h-3.5 w-3.5 mt-0.5 shrink-0 text-primary" />
+                  <span className="font-medium text-secondary shrink-0">
+                    {t("properties.cohostLabel", { defaultValue: "Cohost" })}:
+                  </span>
+                  <span className="text-muted-foreground truncate" data-testid="property-cohost-name">
+                    {propertyCohostNames[p.id]?.length
+                      ? propertyCohostNames[p.id].join(", ")
+                      : t("properties.cohostAssign.unassigned")}
+                  </span>
+                </div>
               </div>
               {p.categories && p.categories.length > 0 && (
                 <div className="flex flex-wrap gap-1 mb-2">

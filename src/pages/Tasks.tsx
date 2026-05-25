@@ -210,6 +210,42 @@ const Tasks = ({ propertyId, embedded = false }: { propertyId?: string; embedded
     }
     setOrgId(effectiveOrgId);
 
+    // Employees (staff) see ONLY the tasks assigned to them — never a
+    // teammate's. Scope the query by assignee so other tasks are never even
+    // loaded, and resolve property names from the ones they're assigned to
+    // (plus any property their tasks point at) for the card labels.
+    if (access.isStaff) {
+      const [myTasksRes, memberRowsRes] = await Promise.all([
+        supabase
+          .from("tasks")
+          .select("*")
+          .eq("org_id", effectiveOrgId)
+          .eq("assigned_to", user.id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("property_members")
+          .select("property_id")
+          .eq("user_id", user.id),
+      ]);
+      const myTasks = (myTasksRes.data ?? []).map(normalizeTaskRow);
+      const allowedIds = ((memberRowsRes.data ?? []) as { property_id: string }[])
+        .map((r) => r.property_id)
+        .filter(Boolean);
+      const taskPropIds = myTasks
+        .map((tk) => tk.property_id)
+        .filter(Boolean) as string[];
+      const propIds = Array.from(new Set([...allowedIds, ...taskPropIds]));
+      const { data: staffProps } = propIds.length
+        ? await supabase.from("properties").select("id,name").in("id", propIds).order("name")
+        : { data: [] as Property[] };
+      setMyRoles(baseRoles);
+      setMembers([]);
+      setProperties((staffProps ?? []) as Property[]);
+      setTasks(myTasks);
+      setLoading(false);
+      return;
+    }
+
     const { data: allTasks } = await supabase
       .from("tasks")
       .select("*")
@@ -563,13 +599,19 @@ const Tasks = ({ propertyId, embedded = false }: { propertyId?: string; embedded
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant={filter === "mine" ? "default" : "outline"} onClick={() => setFilter("mine")}>
-          {t("tasks.myTasks")}
-        </Button>
-        <Button size="sm" variant={filter === "all" ? "default" : "outline"} onClick={() => setFilter("all")}>
-          {t("tasks.allTasks")}
-        </Button>
-        <div className="w-px bg-border mx-1" />
+        {/* Mine/All only matters to managers & cohosts; employees are already
+            scoped to their own tasks, so the toggle is hidden for them. */}
+        {isManager && (
+          <>
+            <Button size="sm" variant={filter === "mine" ? "default" : "outline"} onClick={() => setFilter("mine")}>
+              {t("tasks.myTasks")}
+            </Button>
+            <Button size="sm" variant={filter === "all" ? "default" : "outline"} onClick={() => setFilter("all")}>
+              {t("tasks.allTasks")}
+            </Button>
+            <div className="w-px bg-border mx-1" />
+          </>
+        )}
         {(["all", "todo", "in_progress", "done", "issue"] as const).map((s) => (
           <Button
             key={s}

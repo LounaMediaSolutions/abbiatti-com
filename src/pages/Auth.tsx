@@ -42,6 +42,33 @@ const signupSchema = z.object({
   password: z.string().min(6).max(72),
 });
 
+const getAuthorizedRedirectTarget = (
+  target: string | null | undefined,
+  access: Awaited<ReturnType<typeof getUserAccess>>,
+) => {
+  if (!target || target === "/welcome") {
+    return access.dashboardPath;
+  }
+
+  if (target.startsWith("/super-admin")) {
+    return access.isSuperAdmin ? target : access.dashboardPath;
+  }
+
+  if (target.startsWith("/admin")) {
+    return access.isAdmin ? target : access.dashboardPath;
+  }
+
+  if (target.startsWith("/cohost")) {
+    return access.isCohost ? target : access.dashboardPath;
+  }
+
+  if (target.startsWith("/employee")) {
+    return access.isStaff ? target : access.dashboardPath;
+  }
+
+  return target;
+};
+
 const Auth = () => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -113,7 +140,11 @@ const Auth = () => {
 
         const storedTarget = consumePostLoginRedirect();
         const fallbackTarget = redirectTo === "/welcome" ? access.dashboardPath : redirectTo;
-        navigate(storedTarget ?? fallbackTarget, { replace: true });
+        const target = getAuthorizedRedirectTarget(
+          storedTarget ?? fallbackTarget,
+          access,
+        );
+        navigate(target, { replace: true });
         return;
       }
 
