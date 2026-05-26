@@ -85,6 +85,7 @@ const Auth = () => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const defaultTab = searchParams.get("tab") === "signup" ? "signup" : "login";
+  const [activeTab, setActiveTab] = useState<string>(defaultTab);
   const queryRedirect = searchParams.get("redirect");
   const stateFrom =
     typeof location.state === "object" &&
@@ -123,8 +124,6 @@ const Auth = () => {
 
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
-  const lastOrgName =
-    typeof window !== "undefined" ? localStorage.getItem("lastOrgName") : null;
 
   const [orgName, setOrgName] = useState("");
   const [fullName, setFullName] = useState("");
@@ -213,9 +212,6 @@ const Auth = () => {
         toast.error(error.message);
         return;
       }
-      try {
-        localStorage.setItem("lastOrgName", parsed.data.orgName);
-      } catch {}
       toast.success(t("auth.signupSuccess"));
     } finally {
       setLoading(false);
@@ -287,7 +283,7 @@ const Auth = () => {
       <aside
         className={cn(
           "relative isolate overflow-hidden",
-          "bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900",
+          "bg-gradient-to-br from-blue-900 via-indigo-950 to-slate-950",
           "lg:w-1/2 lg:min-h-screen",
           "px-6 py-8 lg:px-12 lg:py-16",
           "flex flex-col justify-between text-white",
@@ -305,7 +301,7 @@ const Auth = () => {
         />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -top-32 -right-32 h-96 w-96 rounded-full bg-primary/30 blur-3xl"
+          className="pointer-events-none absolute -top-32 -right-32 h-96 w-96 rounded-full bg-blue-500/25 blur-3xl"
         />
         <div
           aria-hidden="true"
@@ -322,7 +318,7 @@ const Auth = () => {
               "inline-flex items-center gap-1.5 text-sm",
               "text-white/70 hover:text-white",
               "transition-colors duration-200 cursor-pointer",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 rounded",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-blue-950 rounded",
             )}
           >
             <ArrowLeft className="h-4 w-4" />
@@ -381,34 +377,53 @@ const Auth = () => {
       </aside>
 
       {/* ─── FORM SIDE ─── */}
-      <main className="relative flex-1 flex items-center justify-center px-4 py-10 sm:px-6 lg:px-10">
-        <div className="absolute top-4 right-4">
+      <main className="relative flex-1 flex items-center justify-center px-4 py-10 sm:px-6 lg:px-10 overflow-hidden">
+        {/* Faint blue echo blob — picks up the hero's color identity without overpowering */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -bottom-40 -right-40 h-[480px] w-[480px] rounded-full bg-blue-500/[0.06] blur-3xl"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-32 -left-32 h-72 w-72 rounded-full bg-indigo-500/[0.04] blur-3xl"
+        />
+
+        <div className="absolute top-4 right-4 z-10">
           <LanguageSwitcher />
         </div>
 
-        <div className="w-full max-w-md motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-4 motion-safe:duration-500">
-          {/* Form header */}
-          <div className="mb-8 space-y-2 text-center">
-            <h1 className="text-3xl font-bold tracking-tight text-secondary">
-              {defaultTab === "signup"
-                ? t("auth.signupTitle", { defaultValue: "Create your workspace" })
-                : t("auth.loginTitle", { defaultValue: "Welcome back" })}
-            </h1>
-            {lastOrgName ? (
-              <p className="text-base font-medium text-primary">
-                {t("auth.welcomeOrganization", { name: lastOrgName }) ||
-                  `Bienvenue ${lastOrgName} 👋`}
-              </p>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {t("auth.subtitle", {
-                  defaultValue: "Admin & co-host workspace for your properties.",
-                })}
-              </p>
-            )}
-          </div>
+        <div className="relative w-full max-w-md motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-4 motion-safe:duration-500">
+          {/* Elevated form card — visual handshake with the navy hero via the accent stripe */}
+          <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-xl shadow-blue-950/[0.06]">
+            {/* Brand accent stripe — matches Welcome Org card + Auth hero gradient */}
+            <div
+              aria-hidden="true"
+              className="h-1 bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700"
+            />
 
-          <Tabs defaultValue={defaultTab} className="w-full">
+            <div className="p-6 sm:p-8">
+              {/* Form header */}
+              <div className="mb-6 space-y-2 text-center">
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-secondary">
+                  {activeTab === "signup"
+                    ? t("auth.signupTitle", {
+                        defaultValue: "Create your workspace",
+                      })
+                    : t("auth.loginTitle", { defaultValue: "Welcome back" })}
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  {t("auth.subtitle", {
+                    defaultValue:
+                      "Admin & co-host workspace for your properties.",
+                  })}
+                </p>
+              </div>
+
+              <Tabs
+                value={activeTab}
+                onValueChange={setActiveTab}
+                className="w-full"
+              >
             <TabsList className="grid w-full grid-cols-2 h-11">
               <TabsTrigger
                 value="login"
@@ -631,10 +646,12 @@ const Auth = () => {
                 </Button>
               </form>
             </TabsContent>
-          </Tabs>
+              </Tabs>
+            </div>
+          </div>
 
-          {/* Legal / reassurance line */}
-          <p className="mt-8 text-center text-xs text-muted-foreground">
+          {/* Legal / reassurance line — outside the card so it reads as page-level fine print */}
+          <p className="mt-6 text-center text-xs text-muted-foreground">
             {t("auth.legal", {
               defaultValue:
                 "By continuing you agree to our terms of service and privacy policy.",

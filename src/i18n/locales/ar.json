@@ -19,7 +19,7 @@
     "noAccount": "ليس لديك حساب؟",
     "loginSuccess": "مرحباً بعودتك!",
     "signupSuccess": "تم إنشاء الحساب. تحقق من بريدك.",
-    "welcomeOrganization": "مرحباً {{name}}",
+    "welcomeOrganization": "مرحباً بعودتك إلى {{name}}",
     "checkEmail": "يرجى التحقق من بريدك الإلكتروني لتأكيد الحساب.",
     "passwordMin": "6 أحرف على الأقل"
   },

@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { WhatsAppReminders } from "@/components/WhatsAppReminders";
 import { getUserAccess } from "@/lib/access";
+import { cn } from "@/lib/utils";
 
 type DashboardProperty = {
   id: string;
@@ -164,28 +165,63 @@ const Dashboard = () => {
   ];
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      <div>
-        <h1 className="text-2xl md:text-3xl font-bold text-secondary">{t("dashboard.title")}</h1>
-        <p className="text-muted-foreground">{t("dashboard.welcome", { name: name || user?.email })}</p>
+    <div className="space-y-6 max-w-6xl mx-auto">
+      {/* Page header — title + primary CTA. Consolidates the old bottom Quick
+          Actions card into a single, more discoverable spot. */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            {t("dashboard.eyebrow", { defaultValue: "Workspace" })}
+          </p>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-secondary">
+            {t("dashboard.title")}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {t("dashboard.welcome", { name: name || user?.email })}
+          </p>
+        </div>
+        <Button asChild className="shrink-0 cursor-pointer">
+          <Link to="/properties">
+            <Plus className="h-4 w-4 mr-2" />
+            {t("dashboard.addProperty")}
+          </Link>
+        </Button>
       </div>
 
+      {/* KPI strip — bordered cards with subtle hover lift */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {cards.map((c) => (
-          <Card key={c.label} className="p-5 shadow-card">
-            <div className={`inline-flex h-10 w-10 items-center justify-center rounded-lg ${c.color} mb-3`}>
+          <Card
+            key={c.label}
+            className={cn(
+              "p-5 border border-border/60 shadow-sm",
+              "transition-all duration-200",
+              "hover:border-primary/30 hover:shadow-md",
+            )}
+          >
+            <div
+              className={cn(
+                "inline-flex h-10 w-10 items-center justify-center rounded-lg",
+                c.color,
+              )}
+            >
               <c.icon className="h-5 w-5" />
             </div>
-            <p className="text-sm text-muted-foreground">{c.label}</p>
-            <p className="text-3xl font-bold text-secondary">{c.value}</p>
+            <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              {c.label}
+            </p>
+            <p className="mt-1 text-3xl font-bold tracking-tight text-secondary tabular-nums">
+              {c.value}
+            </p>
           </Card>
         ))}
       </div>
 
       <WhatsAppReminders orgId={orgId} />
 
-      <Card className="p-5 shadow-card">
-        <div className="flex items-center justify-between gap-3 mb-3">
+      {/* Assigned properties — list-as-cards */}
+      <Card className="p-5 border border-border/60 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
           <div>
             <h2 className="font-semibold text-secondary">
               {t("dashboard.assignedProperties", { defaultValue: "Assigned properties" })}
@@ -196,7 +232,7 @@ const Dashboard = () => {
               })}
             </p>
           </div>
-          <Button asChild variant="outline" size="sm">
+          <Button asChild variant="outline" size="sm" className="shrink-0 cursor-pointer">
             <Link to="/properties">
               {t("dashboard.viewAllProperties", { defaultValue: "Open properties" })}
             </Link>
@@ -204,44 +240,53 @@ const Dashboard = () => {
         </div>
 
         {properties.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-            {t("dashboard.noAssignedProperties", {
-              defaultValue: "No properties are assigned to this account yet.",
-            })}
+          <div className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center">
+            <Home className="mx-auto h-8 w-8 text-muted-foreground/60" aria-hidden="true" />
+            <p className="mt-3 text-sm font-medium text-secondary">
+              {t("dashboard.noAssignedPropertiesTitle", {
+                defaultValue: "No properties yet",
+              })}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t("dashboard.noAssignedProperties", {
+                defaultValue: "No properties are assigned to this account yet.",
+              })}
+            </p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {properties.map((property) => (
               <Link
                 key={property.id}
                 to={`/properties/${property.id}`}
-                className="flex items-center justify-between gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/40"
+                className={cn(
+                  "group flex items-center justify-between gap-3 rounded-xl border border-border/60 p-4",
+                  "transition-colors duration-200 cursor-pointer",
+                  "hover:border-primary/30 hover:bg-muted/40",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2",
+                )}
               >
-                <div className="min-w-0">
-                  <p className="font-medium text-secondary truncate">{property.name}</p>
-                  <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                    <MapPin className="h-4 w-4 shrink-0" />
-                    {[property.city, property.country].filter(Boolean).join(", ") ||
-                      t("properties.locationUnknown", { defaultValue: "Location not set" })}
-                  </p>
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Home className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="font-medium text-secondary truncate">{property.name}</p>
+                    <p className="mt-0.5 text-sm text-muted-foreground flex items-center gap-1">
+                      <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      {[property.city, property.country].filter(Boolean).join(", ") ||
+                        t("properties.locationUnknown", { defaultValue: "Location not set" })}
+                    </p>
+                  </div>
                 </div>
-                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <ArrowRight
+                  className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5"
+                  aria-hidden="true"
+                />
               </Link>
             ))}
           </div>
         )}
-      </Card>
-
-      <Card className="p-5 shadow-card">
-        <h2 className="font-semibold text-secondary mb-3">{t("dashboard.quickActions")}</h2>
-        <div className="flex flex-wrap gap-2">
-          <Button asChild>
-            <Link to="/properties">
-              <Plus className="h-4 w-4 mr-2" />
-              {t("dashboard.addProperty")}
-            </Link>
-          </Button>
-        </div>
       </Card>
     </div>
   );

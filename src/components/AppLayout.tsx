@@ -22,10 +22,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { NotificationBell } from "@/components/NotificationBell";
 import { InvitationBanner } from "@/components/InvitationBanner";
+import { EscaparLogo } from "@/components/EscaparLogo";
 import { cn } from "@/lib/utils";
 import { getUserAccess } from "@/lib/access";
 import { toHslChannels } from "@/lib/brandColor";
-import logo from "@/assets/abbiatti-logo.png";
 import i18n from "@/i18n";
 
 export const AppLayout = ({ children }: { children: ReactNode }) => {
@@ -199,11 +199,15 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
       {/* Sidebar (desktop) */}
       <aside className="hidden md:flex w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground p-4 h-full">
         <div className="flex items-center justify-center px-2 py-4 mb-2 shrink-0">
-          <img
-            src={orgLogo || logo}
-            alt={t("app.name")}
-            className="h-12 w-auto object-contain"
-          />
+          {orgLogo ? (
+            <img
+              src={orgLogo}
+              alt={t("app.name")}
+              className="h-12 w-auto object-contain"
+            />
+          ) : (
+            <EscaparLogo size="text-2xl" className="text-sidebar-foreground" />
+          )}
         </div>
         <nav className="flex-1 space-y-1 overflow-y-auto min-h-0">
           {navItems.map((item) => (
@@ -254,11 +258,15 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
       <div className="flex-1 flex flex-col min-w-0 md:h-full md:overflow-hidden">
         <header className="flex items-center justify-between px-4 md:px-6 h-14 border-b bg-card shrink-0">
           <div className="md:hidden flex items-center">
-            <img
-              src={orgLogo || logo}
-              alt={t("app.name")}
-              className="h-8 w-auto object-contain"
-            />
+            {orgLogo ? (
+              <img
+                src={orgLogo}
+                alt={t("app.name")}
+                className="h-8 w-auto object-contain"
+              />
+            ) : (
+              <EscaparLogo size="text-lg" className="text-foreground" />
+            )}
           </div>
           <div className="ml-auto flex items-center gap-2">
             {orgName && (

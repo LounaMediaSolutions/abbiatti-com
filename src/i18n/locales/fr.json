@@ -19,7 +19,7 @@
     "noAccount": "Pas encore de compte ?",
     "loginSuccess": "Bienvenue !",
     "signupSuccess": "Compte créé. Vérifiez vos emails.",
-    "welcomeOrganization": "Bienvenue {{name}}",
+    "welcomeOrganization": "Bon retour sur {{name}}",
     "checkEmail": "Veuillez vérifier votre email pour confirmer votre compte.",
     "passwordMin": "Minimum 6 caractères"
   },

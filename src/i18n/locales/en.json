@@ -19,7 +19,7 @@
     "noAccount": "Don't have an account?",
     "loginSuccess": "Welcome back!",
     "signupSuccess": "Account created. Check your email.",
-    "welcomeOrganization": "Welcome {{name}}",
+    "welcomeOrganization": "Welcome back to {{name}}",
     "checkEmail": "Please check your email to confirm your account.",
     "passwordMin": "Minimum 6 characters"
   },
