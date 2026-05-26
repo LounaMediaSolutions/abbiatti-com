@@ -12,6 +12,7 @@
     "phone": "الهاتف",
     "orgName": "اسم الوكالة",
     "loginBtn": "دخول",
+    "forgotPassword": "هل نسيت كلمة المرور؟",
     "signupBtn": "إنشاء الحساب",
     "logout": "تسجيل الخروج",
     "alreadyAccount": "لديك حساب بالفعل؟",
@@ -762,6 +763,16 @@
   "orgProfiles": {
     "properties": "العقارات",
     "noProperties": "لا يوجد تعيين"
+  },
+  "locations": {
+    "country": "البلد",
+    "state": "الولاية / المنطقة",
+    "allCountries": "كل البلدان",
+    "allStates": "كل الولايات",
+    "statePickCountryFirst": "اختر البلد أولاً",
+    "unset": "—",
+    "country_DZ": "الجزائر",
+    "country_AE": "الإمارات العربية المتحدة"
   },
   "superAdminProfiles": {
     "title": "الملفات الشخصية",

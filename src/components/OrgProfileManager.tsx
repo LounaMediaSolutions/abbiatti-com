@@ -43,6 +43,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
+import {
+  COUNTRIES,
+  getStatesForCountry,
+  isStateInCountry,
+} from "@/lib/locations";
 
 // Org-scoped people manager used by the admin Cohosts / Employees sections.
 // It mirrors the super-admin SuperAdminProfileManager (search, status filter,
@@ -88,7 +93,14 @@ type ProfileRow = {
   org_id: string | null;
   role: string | null;
   active: boolean | null;
+  country: string | null;
+  state: string | null;
 };
+
+const COUNTRY_ALL = "__all__";
+const STATE_ALL = "__all__";
+const COUNTRY_NONE = "__none__";
+const STATE_NONE = "__none__";
 
 type AssignedProperty = { id: string; name: string };
 
@@ -157,8 +169,16 @@ export default function OrgProfileManager({
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [countryFilter, setCountryFilter] = useState<string>(COUNTRY_ALL);
+  const [stateFilter, setStateFilter] = useState<string>(STATE_ALL);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+
+  // Switching country must drop a now-irrelevant state code so we don't
+  // silently filter to zero rows.
+  useEffect(() => {
+    setStateFilter(STATE_ALL);
+  }, [countryFilter]);
 
   const [savingId, setSavingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
@@ -217,13 +237,20 @@ export default function OrgProfileManager({
       let query = supabase
         .from("profiles")
         .select(
-          "id, full_name, email, phone, avatar_url, org_id, role, active",
+          "id, full_name, email, phone, avatar_url, org_id, role, active, country, state",
           { count: "exact" },
         )
         .eq("org_id", orgId)
         .in("role", allowedRoles as string[])
         .order("created_at", { ascending: false, nullsFirst: false })
         .order("id", { ascending: true });
+
+      if (countryFilter !== COUNTRY_ALL) {
+        query = query.eq("country", countryFilter);
+      }
+      if (stateFilter !== STATE_ALL) {
+        query = query.eq("state", stateFilter);
+      }
 
       if (statusFilter === "active") {
         query = query.or("active.is.null,active.eq.true");
@@ -322,13 +349,54 @@ export default function OrgProfileManager({
     if (typeof orgId !== "string") return;
     void loadProfiles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, page, pageSize, statusFilter, searchQuery, roleKey]);
+  }, [orgId, page, pageSize, statusFilter, searchQuery, roleKey, countryFilter, stateFilter]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const safePage = Math.min(page, totalPages);
   useEffect(() => {
     if (safePage !== page) setPage(safePage);
   }, [safePage, page]);
+
+  /** Update country and/or state on a profile. Mirrors the same helper in
+   *  SuperAdminProfileManager — when we change country, drop a now-orphaned
+   *  state code so the row never has a state that doesn't belong to its
+   *  country. */
+  const updateLocation = async (
+    profile: ProfileItem,
+    patch: { country?: string | null; state?: string | null },
+  ) => {
+    const payload: Record<string, string | null> = {};
+    if (patch.country !== undefined) payload.country = patch.country;
+    if (patch.state !== undefined) payload.state = patch.state;
+    if (Object.keys(payload).length === 0) return;
+
+    if (
+      patch.country !== undefined &&
+      profile.state &&
+      !isStateInCountry(profile.state, patch.country)
+    ) {
+      payload.state = null;
+    }
+
+    setSavingId(profile.id);
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update(payload as never)
+        .eq("id", profile.id);
+      if (error) throw error;
+      await loadProfiles();
+    } catch (error: unknown) {
+      toast({
+        title: t("common.error"),
+        description:
+          getErrorMessage(error) ?? "Failed to update location",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingId(null);
+    }
+  };
 
   const updateRole = async (profile: ProfileItem, nextRole: string) => {
     if (profile.id === user?.id) {
@@ -489,6 +557,63 @@ export default function OrgProfileManager({
               </SelectContent>
             </Select>
           </div>
+          <div className="w-full space-y-1.5 sm:w-44">
+            <Label>{t("locations.country", { defaultValue: "Country" })}</Label>
+            <Select
+              value={countryFilter}
+              onValueChange={(value) => {
+                setCountryFilter(value);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={COUNTRY_ALL}>
+                  {t("locations.allCountries", { defaultValue: "All countries" })}
+                </SelectItem>
+                {COUNTRIES.map((country) => (
+                  <SelectItem key={country.code} value={country.code}>
+                    {t(`locations.country_${country.code}`, {
+                      defaultValue: country.labelEn,
+                    })}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-full space-y-1.5 sm:w-48">
+            <Label>{t("locations.state", { defaultValue: "State / Region" })}</Label>
+            <Select
+              value={stateFilter}
+              onValueChange={(value) => {
+                setStateFilter(value);
+                setPage(1);
+              }}
+              disabled={countryFilter === COUNTRY_ALL}
+            >
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={t("locations.statePickCountryFirst", {
+                    defaultValue: "Pick a country first",
+                  })}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={STATE_ALL}>
+                  {t("locations.allStates", { defaultValue: "All states" })}
+                </SelectItem>
+                {getStatesForCountry(
+                  countryFilter === COUNTRY_ALL ? null : countryFilter,
+                ).map((state) => (
+                  <SelectItem key={state.code} value={state.code}>
+                    {state.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="w-full space-y-1.5 sm:w-32">
             <Label>
               {t("superAdminProfiles.pageSizeLabel", { defaultValue: "Per page" })}
@@ -626,6 +751,67 @@ export default function OrgProfileManager({
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1.5">
+                      <Label>{t("locations.country", { defaultValue: "Country" })}</Label>
+                      <Select
+                        value={profile.country ?? COUNTRY_NONE}
+                        onValueChange={(value) =>
+                          updateLocation(profile, {
+                            country: value === COUNTRY_NONE ? null : value,
+                          })
+                        }
+                        disabled={isBusy}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={COUNTRY_NONE}>
+                            {t("locations.unset", { defaultValue: "—" })}
+                          </SelectItem>
+                          {COUNTRIES.map((country) => (
+                            <SelectItem key={country.code} value={country.code}>
+                              {t(`locations.country_${country.code}`, {
+                                defaultValue: country.labelEn,
+                              })}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>{t("locations.state", { defaultValue: "State / Region" })}</Label>
+                      <Select
+                        value={profile.state ?? STATE_NONE}
+                        onValueChange={(value) =>
+                          updateLocation(profile, {
+                            state: value === STATE_NONE ? null : value,
+                          })
+                        }
+                        disabled={isBusy || !profile.country}
+                      >
+                        <SelectTrigger>
+                          <SelectValue
+                            placeholder={t("locations.statePickCountryFirst", {
+                              defaultValue: "Pick a country first",
+                            })}
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={STATE_NONE}>
+                            {t("locations.unset", { defaultValue: "—" })}
+                          </SelectItem>
+                          {getStatesForCountry(profile.country).map((state) => (
+                            <SelectItem key={state.code} value={state.code}>
+                              {state.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
 
                   {profile.banned ? (

@@ -12,6 +12,7 @@
     "phone": "Téléphone",
     "orgName": "Nom de l'organisation",
     "loginBtn": "Se connecter",
+    "forgotPassword": "Mot de passe oublié ?",
     "signupBtn": "Créer mon compte",
     "logout": "Déconnexion",
     "alreadyAccount": "Déjà un compte ?",
@@ -741,6 +742,16 @@
     "employeesSubtitle": "Gérez les agents d'entretien, chauffeurs, décorateurs, maintenance et personnel de toutes les organisations.",
     "profilesTitle": "Profils",
     "profilesSubtitle": "Gérez tous les autres utilisateurs — invités, comptes sans rôle et rôles plateforme qui ne sont ni admins, ni co-hôtes, ni employés."
+  },
+  "locations": {
+    "country": "Pays",
+    "state": "Wilaya / Région",
+    "allCountries": "Tous les pays",
+    "allStates": "Toutes les régions",
+    "statePickCountryFirst": "Choisir un pays d'abord",
+    "unset": "—",
+    "country_DZ": "Algérie",
+    "country_AE": "Émirats arabes unis"
   },
   "superAdminProfiles": {
     "title": "Profils",

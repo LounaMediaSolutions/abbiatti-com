@@ -12,6 +12,7 @@
     "phone": "Phone",
     "orgName": "Organization name",
     "loginBtn": "Log in",
+    "forgotPassword": "Forgot password?",
     "signupBtn": "Create account",
     "logout": "Log out",
     "alreadyAccount": "Already have an account?",
@@ -741,6 +742,16 @@
     "employeesSubtitle": "Manage cleaners, drivers, decorators, maintenance and staff across all organizations.",
     "profilesTitle": "Profiles",
     "profilesSubtitle": "Manage all other users — guests, unassigned accounts and platform roles that aren't admins, cohosts or employees."
+  },
+  "locations": {
+    "country": "Country",
+    "state": "State / Region",
+    "allCountries": "All countries",
+    "allStates": "All states",
+    "statePickCountryFirst": "Pick a country first",
+    "unset": "—",
+    "country_DZ": "Algeria",
+    "country_AE": "United Arab Emirates"
   },
   "superAdminProfiles": {
     "title": "Profiles",
