@@ -180,6 +180,15 @@ function statusFromEvent(e: ParsedEvent): string {
   return "confirmed";
 }
 
+/** Generate a short, sortable booking reference. The bookings table requires
+ *  ref_number (NOT NULL, no default), and on UPDATE we want to leave the
+ *  existing value alone — so this is only used on first INSERT. */
+function generateRefNumber(uid: string): string {
+  const safe = uid.replace(/[^A-Za-z0-9]/g, "").slice(0, 8).toUpperCase();
+  const stamp = Date.now().toString(36).toUpperCase();
+  return `ICAL-${stamp}-${safe || "X"}`;
+}
+
 async function syncOneFeed(
   admin: SupabaseClient,
   feed: FeedRow,
@@ -198,39 +207,68 @@ async function syncOneFeed(
     const events = parseIcal(body);
 
     let imported = 0;
+    let lastWriteError: string | null = null;
     for (const e of events) {
       const status = statusFromEvent(e);
       const nights = nightsBetween(e.dtstart, e.dtend);
+      // `customer_name` is NOT NULL on the live `bookings` schema. Channels
+      // other than Airbnb (Booking.com, Vrbo, …) often ship VEVENTs without
+      // a SUMMARY, so default to a sensible per-channel placeholder instead
+      // of `null` to keep the constraint happy.
       const guestName =
-        feed.source === "airbnb"
-          ? (e.summary ?? "Airbnb guest")
-          : (e.summary ?? null);
+        e.summary?.trim() ||
+        (feed.source === "airbnb" ? "Airbnb guest" : `${feed.source} guest`);
 
-      // Upsert by (property_id, channel_slug, channel_ref) — the unique
-      // index added by migration 20260517120000. The bookings table uses
-      // `org_id` (not `organization_id`) per the live schema.
-      const { error } = await admin
+      // Two-step write because:
+      //   1) PostgREST upsert(onConflict) can't target the partial unique
+      //      index (WHERE channel_ref IS NOT NULL) shipped in the original
+      //      migration. A follow-up migration replaces it with a full
+      //      unique index, but to stay compatible with deployments that
+      //      haven't run it yet we just do SELECT → INSERT-or-UPDATE here.
+      //   2) `ref_number` is NOT NULL with no DB default. We only want to
+      //      generate one on INSERT, not overwrite an existing booking's
+      //      reference on every re-sync.
+      const { data: existing } = await admin
         .from("bookings")
-        .upsert(
-          {
-            org_id: feed.organization_id,
-            property_id: feed.property_id,
-            channel_slug: feed.source,
-            channel_ref: e.uid,
-            checkin: e.dtstart,
-            checkout: e.dtend,
-            nights,
-            status,
-            customer_name: guestName,
-          },
-          { onConflict: "property_id,channel_slug,channel_ref" },
-        );
+        .select("id")
+        .eq("property_id", feed.property_id)
+        .eq("channel_slug", feed.source)
+        .eq("channel_ref", e.uid)
+        .maybeSingle();
+
+      const sharedFields = {
+        org_id: feed.organization_id,
+        property_id: feed.property_id,
+        channel_slug: feed.source,
+        channel_ref: e.uid,
+        checkin: e.dtstart,
+        checkout: e.dtend,
+        nights,
+        status,
+        customer_name: guestName,
+      };
+
+      const { error } = existing?.id
+        ? await admin.from("bookings").update(sharedFields).eq("id", existing.id)
+        : await admin
+            .from("bookings")
+            .insert({ ...sharedFields, ref_number: generateRefNumber(e.uid) });
       if (error) {
         // One bad row shouldn't abort the whole feed — log and continue.
-        console.warn(`upsert failed for UID ${e.uid}: ${error.message}`);
+        console.warn(`write failed for UID ${e.uid}: ${error.message}`);
+        lastWriteError = error.message;
         continue;
       }
       imported++;
+    }
+
+    // If the feed had events but every single write failed, that's a real
+    // failure, not a 0-event sync. Surface it so the UI can show why nothing
+    // came through instead of a misleading "synced 0 events" toast.
+    if (events.length > 0 && imported === 0 && lastWriteError) {
+      throw new Error(
+        `Parsed ${events.length} events but none could be written: ${lastWriteError}`,
+      );
     }
 
     await admin

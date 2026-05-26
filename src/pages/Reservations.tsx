@@ -109,11 +109,60 @@ export default function Reservations({ propertyId, embedded = false }: { propert
   const { data: reservations = [], isLoading } = useQuery({
     queryKey: ["reservations", access?.role, user?.id, propertyIdsKey],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("reservations")
-        .select("*")
-        .order("check_in", { ascending: true });
-      const allReservations = (data ?? []) as Reservation[];
+      // The live schema uses `bookings` — not `reservations`. The legacy
+      // `reservations` table that earlier migrations provisioned isn't
+      // deployed here (PostgREST reports it missing from the schema cache),
+      // which is the same drift Availability.tsx already worked around. We
+      // query `bookings` and map the column names to this file's
+      // `Reservation` shape at the data layer so the rest of the UI
+      // (cards, edit dialog, propertyMap) keeps working unchanged.
+      const { data, error } = await supabase
+        .from("bookings")
+        .select(
+          "id, property_id, channel_slug, channel_ref, checkin, checkout, customer_name, customer_phone, guests, status, notes",
+        )
+        .order("checkin", { ascending: true });
+      if (error) {
+        toast.error(`Reservations: ${error.message}`);
+        return [] as Reservation[];
+      }
+      const rows = (data ?? []) as Array<{
+        id: string;
+        property_id: string;
+        channel_slug: string | null;
+        channel_ref: string | null;
+        checkin: string | null;
+        checkout: string | null;
+        customer_name: string | null;
+        customer_phone: string | null;
+        guests: number | null;
+        status: string | null;
+        notes: string | null;
+      }>;
+      // Skip bookings without dates — they'd crash format(new Date(...)) on
+      // the cards. Sync-ical never writes those, but manual rows might.
+      const allReservations: Reservation[] = rows
+        .filter((r) => r.checkin && r.checkout)
+        .map((r) => ({
+          id: r.id,
+          property_id: r.property_id,
+          source: r.channel_slug ?? "manual",
+          external_code: r.channel_ref,
+          check_in: r.checkin as string,
+          check_out: r.checkout as string,
+          guest_name: r.customer_name,
+          guest_phone: r.customer_phone,
+          // bookings has no `guest_language` / `expected_arrival_time`
+          // columns; the manual edit dialog still uses these in-memory but
+          // the values aren't persisted (they were already dropped on
+          // previous saves through the old `reservations` table too, since
+          // it didn't exist).
+          guest_language: null,
+          guests_count: r.guests,
+          expected_arrival_time: null,
+          status: r.status ?? "confirmed",
+          notes: r.notes,
+        }));
 
       if (!access?.isCohost) return allReservations;
 
@@ -174,11 +223,44 @@ export default function Reservations({ propertyId, embedded = false }: { propert
 
   const upsertRes = useMutation({
     mutationFn: async (r: Partial<Reservation> & { organization_id?: string }) => {
+      // Map the dialog's Reservation shape onto the live `bookings` columns.
+      // bookings.customer_name is NOT NULL — fall back to a placeholder for
+      // blocks / partially-filled manual rows so the constraint passes.
+      const bookingPayload: Record<string, unknown> = {
+        property_id: r.property_id,
+        channel_slug: r.source ?? "manual",
+        channel_ref: r.external_code ?? null,
+        checkin: r.check_in ?? null,
+        checkout: r.check_out ?? null,
+        customer_name:
+          (r.guest_name && r.guest_name.trim()) ||
+          (r.status === "blocked" ? "Owner block" : "Manual booking"),
+        customer_phone: r.guest_phone ?? null,
+        guests: r.guests_count ?? null,
+        status: r.status ?? "confirmed",
+        notes: r.notes ?? null,
+      };
+
       if (r.id) {
-        const { error } = await supabase.from("reservations").update(r as never).eq("id", r.id);
+        const { error } = await supabase
+          .from("bookings")
+          .update(bookingPayload as never)
+          .eq("id", r.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("reservations").insert({ ...r, organization_id: orgId! } as never);
+        // bookings.ref_number is NOT NULL with no DB default — generate one
+        // for new manual bookings the same way sync-ical does for imports.
+        const refNumber = `MAN-${Date.now().toString(36).toUpperCase()}-${Math.random()
+          .toString(36)
+          .slice(2, 6)
+          .toUpperCase()}`;
+        const { error } = await supabase
+          .from("bookings")
+          .insert({
+            ...bookingPayload,
+            ref_number: refNumber,
+            org_id: orgId!,
+          } as never);
         if (error) throw error;
       }
     },

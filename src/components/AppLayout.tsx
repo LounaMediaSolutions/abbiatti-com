@@ -188,17 +188,24 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-background">
+    // h-screen (not min-h-screen) so the outer container is exactly the
+    // viewport height. That gives each scroll-aware child (the sidebar nav
+    // and the main area) its own bounded box — without this, the entire
+    // page scrolls as one unit and the sidebar disappears along with the
+    // page content. md:overflow-hidden prevents body-level scroll on
+    // desktop; on mobile the bottom nav is fixed and the right column
+    // handles its own scroll, so we let the page flow naturally there.
+    <div className="h-screen flex flex-col md:flex-row md:overflow-hidden bg-background">
       {/* Sidebar (desktop) */}
-      <aside className="hidden md:flex w-64 flex-col bg-sidebar text-sidebar-foreground p-4">
-        <div className="flex items-center justify-center px-2 py-4 mb-2">
+      <aside className="hidden md:flex w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground p-4 h-full">
+        <div className="flex items-center justify-center px-2 py-4 mb-2 shrink-0">
           <img
             src={orgLogo || logo}
             alt={t("app.name")}
             className="h-12 w-auto object-contain"
           />
         </div>
-        <nav className="flex-1 space-y-1">
+        <nav className="flex-1 space-y-1 overflow-y-auto min-h-0">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
@@ -218,7 +225,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
             </NavLink>
           ))}
         </nav>
-        <div className="space-y-2 pt-4 border-t border-sidebar-border">
+        <div className="space-y-2 pt-4 border-t border-sidebar-border shrink-0">
           {orgName && (
             <div
               className="px-3 text-[11px] text-sidebar-foreground/80 truncate flex items-center gap-1.5"
@@ -244,8 +251,8 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
       </aside>
 
       {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="flex items-center justify-between px-4 md:px-6 h-14 border-b bg-card">
+      <div className="flex-1 flex flex-col min-w-0 md:h-full md:overflow-hidden">
+        <header className="flex items-center justify-between px-4 md:px-6 h-14 border-b bg-card shrink-0">
           <div className="md:hidden flex items-center">
             <img
               src={orgLogo || logo}
