@@ -7,6 +7,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppLayout } from "@/components/AppLayout";
 import { ComingSoon } from "@/components/ComingSoon";
+import { RecoveryHashHandler } from "@/components/RecoveryHashHandler";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import Properties from "./pages/Properties";
@@ -59,6 +60,11 @@ const App = () => (
       <Sonner />
       <Router>
         <AuthProvider>
+          {/* Catches password-recovery URL fragments (expired tokens land
+              on `/#error=...`; valid tokens may land anywhere if the
+              Supabase URL allowlist is misconfigured) and routes the user
+              to the right place. */}
+          <RecoveryHashHandler />
           <Routes>
             <Route path="/welcome" element={<Welcome />} />
             <Route path="/auth" element={<Auth />} />
