@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -93,6 +93,23 @@ const Auth = () => {
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [pendingResetEmail, setPendingResetEmail] = useState("");
   const appOrigin = getAppOrigin();
+
+  // Belt-and-braces for stale password-recovery email links. Older versions
+  // of this app sent the reset email with `redirectTo` pointing at /auth
+  // instead of /reset-password (see Settings.tsx history). Those links are
+  // still valid until they expire — when one of them lands here we bounce
+  // to /reset-password while preserving the URL hash so the Supabase SDK
+  // still picks up the recovery token and the password form renders.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash ?? "";
+    if (!hash) return;
+    // Recovery URLs look like #access_token=...&type=recovery&... — match
+    // the type marker rather than parsing every parameter.
+    if (/[?#&]type=recovery(&|$)/.test(hash)) {
+      navigate(`/reset-password${hash}`, { replace: true });
+    }
+  }, [navigate]);
 
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");

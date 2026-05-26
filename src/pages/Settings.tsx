@@ -722,8 +722,13 @@ function SecurityTab({
 
   async function sendReset() {
     const appOrigin = getAppOrigin();
+    // Recovery links must land on /reset-password so the password form is
+    // actually rendered (Auth.tsx only shows the login/signup tabs, not the
+    // new-password fields). Both this call site and Auth.tsx's forgot-
+    // password flow point at the same path now to keep email links
+    // consistent.
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${appOrigin}/auth`,
+      redirectTo: `${appOrigin}/reset-password`,
     });
     if (error) return toast.error(error.message);
     toast.success(t("settings.sec.resetSent"));
