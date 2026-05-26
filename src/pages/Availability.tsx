@@ -20,9 +20,27 @@ type Property = {
   name: string;
   city: string | null;
   country: string | null;
-  property_type: string;
   max_guests: number | null;
   categories: string[] | null;
+};
+
+// Map of column-name → fallback value used when the live schema doesn't have
+// that column. Lets us keep rendering the page even when the deployed
+// `properties` shape lags behind what this file would like to select.
+const PROPERTY_COLUMN_DEFAULTS: Record<string, unknown> = {
+  city: null,
+  country: null,
+  max_guests: null,
+  categories: null,
+  active: true,
+};
+
+const extractMissingPropertyColumn = (error: { message?: string } | null) => {
+  const message = error?.message ?? "";
+  const schemaCacheMatch = message.match(/'([^']+)' column of 'properties'/i);
+  if (schemaCacheMatch?.[1]) return schemaCacheMatch[1];
+  const postgresMatch = message.match(/column properties\.([a-z_]+)/i);
+  return postgresMatch?.[1] ?? null;
 };
 
 type Reservation = {
@@ -55,34 +73,56 @@ export default function Availability({ propertyId, embedded = false }: { propert
   const { data: allProperties = [] } = useQuery({
     queryKey: ["avail-properties"],
     queryFn: async () => {
-      // Previously: .eq("status", "active"). The live schema doesn't have a
-      // `status` column on properties (only `active: boolean`, see types.ts),
-      // so that filter errored silently and returned zero rows — which is why
-      // the page rendered empty. RLS already scopes the rows to the user's
-      // org + cohost assignments, so we just ask for everything visible and
-      // optionally narrow by `active=true` in JS once the rows arrive.
-      //
-      // The live `properties` table uses `org_id`, not `organization_id`,
-      // and the earlier comment here had it reversed — which is exactly
-      // why the page errored with "column properties.organization_id does
-      // not exist". Properties.tsx works around this by probing both names,
-      // but here we just commit to the live column name. RLS already
-      // scopes the rows to the user's org + cohost assignments.
-      const { data, error } = await supabase
-        .from("properties")
-        .select(
-          "id, org_id, name, city, country, property_type, max_guests, categories, active",
-        )
-        .order("name");
-      if (error) {
-        // Surface the failure instead of silently swallowing it. If the
-        // column shape genuinely doesn't match the schema cache we still
-        // return what we have so the page renders something.
-        toast.error(`Availability: ${error.message}`);
+      // The live schema has drifted from this file's expectations more than
+      // once (e.g. no `status` column, no `property_type` column). Rather
+      // than hand-coding the right column list per deployment, we ask for
+      // every column we'd like and strip whichever the schema cache rejects,
+      // retrying until success — exactly what Properties.tsx does. RLS
+      // already scopes the rows to the user's org + cohost assignments.
+      const WANTED_COLUMNS = [
+        "id",
+        "org_id",
+        "name",
+        "city",
+        "country",
+        "max_guests",
+        "categories",
+        "active",
+      ];
+      const missing = new Set<string>();
+      let rows: Array<Property & { active?: boolean | null }> = [];
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        const cols = WANTED_COLUMNS.filter((c) => !missing.has(c));
+        const { data, error } = await supabase
+          .from("properties")
+          .select(cols.join(", "))
+          .order("name");
+        if (!error) {
+          rows = ((data ?? []) as unknown) as Array<
+            Property & { active?: boolean | null }
+          >;
+          // Backfill any column we couldn't ask for so downstream code
+          // (filters, calendar coloring) still gets a sensible shape.
+          rows = rows.map((row) => {
+            const filled: Record<string, unknown> = { ...row };
+            for (const col of missing) {
+              if (!(col in filled)) {
+                filled[col] = PROPERTY_COLUMN_DEFAULTS[col] ?? null;
+              }
+            }
+            return filled as Property & { active?: boolean | null };
+          });
+          break;
+        }
+        const missingCol = extractMissingPropertyColumn(error);
+        if (!missingCol || missing.has(missingCol) || !cols.includes(missingCol)) {
+          // Different kind of error (RLS, network, …) — surface and bail
+          // with whatever we already had, so the page still renders.
+          toast.error(`Availability: ${error.message}`);
+          break;
+        }
+        missing.add(missingCol);
       }
-      const rows = ((data ?? []) as unknown) as Array<
-        Property & { active?: boolean | null }
-      >;
       // Show every property unless it's been explicitly deactivated.
       return rows.filter((p) => p.active !== false) as Property[];
     },

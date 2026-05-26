@@ -51,10 +51,6 @@ interface Task {
   completed_at?: string | null;
 }
 
-// Helper so we don't have to remember the column name in two places.
-const isTaskAuthor = (task: { created_by?: string | null; assigned_by?: string | null }, userId?: string | null) =>
-  Boolean(userId) && (task.created_by === userId || task.assigned_by === userId);
-
 // Columns that the live database may not actually have. We try the insert
 // with all of them, and if the schema cache complains about a specific one,
 // we drop it and retry. This keeps the frontend resilient to the gap between
@@ -889,7 +885,7 @@ const TaskDetail = ({
         <CleaningChecklist
           taskId={task.id}
           organizationId={task.org_id}
-          canEdit={task.assigned_to === user?.id || isTaskAuthor(task, user?.id)}
+          canEdit={task.assigned_to === user?.id}
           onAllDone={setChecklistComplete}
         />
       )}
@@ -985,8 +981,13 @@ const TaskDetail = ({
         </Button>
       </div>
 
-      {/* Action buttons - sticky at bottom feeling */}
-      {(task.assigned_to === user?.id || isTaskAuthor(task, user?.id)) && (
+      {/* Workflow action buttons (Start / Finish / Report Issue) are
+          assignee-only. Managers (admin / super-admin / co-admin / cohost) can
+          still create, delete, and otherwise update the task — but only the
+          person the task was assigned to may move it through its workflow,
+          including marking it completed. This is enforced server-side too via
+          the `enforce_task_completion_assignee` trigger. */}
+      {task.assigned_to === user?.id && (
         <div className="grid grid-cols-1 gap-3 pt-2">
           {task.status === "todo" && (
             <Button size="lg" className="h-16 text-lg" onClick={handleStart}>
