@@ -10,6 +10,7 @@ export type AppRole =
   | "decorator"
   | "maintenance"
   | "staff"
+  | "user"
   | "guest"
   | string;
 
@@ -29,6 +30,10 @@ export const isOrgAdminRole = (role: string | null | undefined) =>
 export const isEmployeeRole = (role: string | null | undefined) =>
   !!role && EMPLOYEE_ROLES.includes(role as (typeof EMPLOYEE_ROLES)[number]);
 
+/** Public signups land as `user` until a super-admin promotes them to admin. */
+export const isPendingUserRole = (role: string | null | undefined) =>
+  role === "user";
+
 export const getDashboardPathForRole = (
   role: string | null | undefined,
   hasCohostAssignments = false,
@@ -38,6 +43,7 @@ export const getDashboardPathForRole = (
     return "/admin/dashboard";
   }
   if (role === "cohost" || hasCohostAssignments) return "/cohost/dashboard";
+  if (isPendingUserRole(role)) return "/user";
   return "/employee";
 };
 
@@ -100,6 +106,7 @@ export async function getUserAccess(userId: string) {
   const role = (profile?.role ?? null) as AppRole | null;
   const isSuperAdmin = isSuperAdminRole(role);
   const isAdmin = isAdminRole(role);
+  const isPendingUser = isPendingUserRole(role);
 
   const { data: cohosts } = await supabase
     .from("property_cohosts")
@@ -120,6 +127,9 @@ export async function getUserAccess(userId: string) {
     isSuperAdmin,
     isAdmin,
     isCohost,
-    isStaff: !isManager,
+    isPendingUser,
+    // A 'user' role isn't staff — they're pending admin access. Excluding them
+    // here keeps them from accidentally landing on the staff dashboard.
+    isStaff: !isManager && !isPendingUser,
   };
 }
