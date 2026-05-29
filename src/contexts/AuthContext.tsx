@@ -2,6 +2,9 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { clearPostLoginRedirect } from "@/lib/authRedirect";
+import { createDebugLogger } from "@/lib/debugLog";
+
+const log = createDebugLogger("auth");
 
 interface AuthContextValue {
   user: User | null;
@@ -27,7 +30,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const applySession = (nextSession: Session | null, source: string) => {
       if (!isMounted) return;
-      console.log("[AuthContext] applySession", {
+      log("applySession", {
         source,
         hasSession: !!nextSession,
         userId: nextSession?.user?.id ?? null,
@@ -40,7 +43,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
-      console.log("[AuthContext] onAuthStateChange event:", event);
+      log("onAuthStateChange", { event });
       applySession(newSession, `onAuthStateChange:${event}`);
     });
 

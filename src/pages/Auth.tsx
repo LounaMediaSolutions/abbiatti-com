@@ -44,8 +44,12 @@ const loginSchema = z.object({
   password: z.string().min(6),
 });
 
+// Signup creates a pending user (role='user', no org). They then submit an
+// admin_access_request from /user — a super-admin approves and that's what
+// actually creates the org + promotes them to 'admin'. This keeps the
+// org-creation moment auditable and prevents random signups from spinning
+// up workspaces.
 const signupSchema = z.object({
-  orgName: z.string().trim().min(1).max(100),
   fullName: z.string().trim().min(1).max(100),
   email: z.string().trim().email().max(255),
   phone: z.string().trim().max(30).optional(),
@@ -125,7 +129,6 @@ const Auth = () => {
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
 
-  const [orgName, setOrgName] = useState("");
   const [fullName, setFullName] = useState("");
   const [signupEmail, setSignupEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -185,7 +188,6 @@ const Auth = () => {
     setLoading(true);
     try {
       const parsed = signupSchema.safeParse({
-        orgName,
         fullName,
         email: signupEmail,
         phone,
@@ -195,6 +197,10 @@ const Auth = () => {
         toast.error(parsed.error.issues[0].message);
         return;
       }
+      // `is_public_signup: 'true'` tells the `handle_new_user` trigger to
+      // seed the profile with role='user' (no org). The user then submits
+      // an admin_access_request from /user; approval is what actually
+      // creates the org and promotes them.
       const { error } = await supabase.auth.signUp({
         email: parsed.data.email,
         password: parsed.data.password,
@@ -203,8 +209,8 @@ const Auth = () => {
           data: {
             full_name: parsed.data.fullName,
             phone: parsed.data.phone ?? "",
-            org_name: parsed.data.orgName,
             language: i18n.language,
+            is_public_signup: "true",
           },
         },
       });
@@ -407,15 +413,20 @@ const Auth = () => {
                 <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-secondary">
                   {activeTab === "signup"
                     ? t("auth.signupTitle", {
-                        defaultValue: "Create your workspace",
+                        defaultValue: "Request admin access",
                       })
                     : t("auth.loginTitle", { defaultValue: "Welcome back" })}
                 </h1>
                 <p className="text-sm text-muted-foreground">
-                  {t("auth.subtitle", {
-                    defaultValue:
-                      "Admin & co-host workspace for your properties.",
-                  })}
+                  {activeTab === "signup"
+                    ? t("auth.signupSubtitle", {
+                        defaultValue:
+                          "Create an account, then request admin access from your dashboard. A super-admin will review.",
+                      })
+                    : t("auth.subtitle", {
+                        defaultValue:
+                          "Admin & co-host workspace for your properties.",
+                      })}
                 </p>
               </div>
 
@@ -532,19 +543,9 @@ const Auth = () => {
             {/* ─── SIGNUP TAB ─── */}
             <TabsContent value="signup" className="mt-6">
               <form onSubmit={handleSignup} className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="orgName" className="text-sm font-medium">
-                    {t("auth.orgName")}
-                  </Label>
-                  <Input
-                    id="orgName"
-                    autoComplete="organization"
-                    required
-                    value={orgName}
-                    onChange={(e) => setOrgName(e.target.value)}
-                    className="h-11"
-                  />
-                </div>
+                {/* Org name is intentionally NOT collected here — it lives on
+                    the admin-access request form at /user. Signup creates a
+                    pending account; the org is only spun up on approval. */}
                 <div className="space-y-1.5">
                   <Label htmlFor="fullName" className="text-sm font-medium">
                     {t("auth.fullName")}

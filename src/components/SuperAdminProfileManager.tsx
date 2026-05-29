@@ -12,7 +12,25 @@ import {
   UserPlus,
   Trash2,
   RefreshCw,
+  Users,
+  UserCheck,
+  UserX,
+  Globe,
+  SlidersHorizontal,
+  Mail,
+  Phone,
+  MapPin,
+  Building2,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { isSuperAdminUser } from "@/lib/access";
@@ -180,30 +198,79 @@ const getRoleOptions = (scope: Scope) =>
 const getRoleLabelKey = (role: string) =>
   isGlobalRole(role) ? `superAdminStaff.roles.${role}` : `team.roles.${role}`;
 
+// Soft tinted chips — matches the data-dense dashboard convention. Same
+// palette as OrgProfileManager so the role chip means the same thing on
+// every screen regardless of who's looking at it.
 const getRoleBadgeClass = (role: string | null) => {
   switch (role) {
     case "super_admin":
-      return "bg-primary text-primary-foreground";
+      return "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200";
     case "admin":
     case "co_admin":
-      return "bg-secondary text-secondary-foreground";
+      return "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200";
     case "cohost":
-      return "bg-amber-500 text-white";
+      return "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200";
     case "cleaner":
     case "driver":
     case "decorator":
     case "maintenance":
     case "staff":
-      return "bg-emerald-500 text-white";
+      return "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200";
     case "guest":
-      return "bg-muted text-foreground";
+      return "bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200";
     case null:
     case undefined:
-      return "bg-destructive/20 text-destructive";
+      return "bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-200";
     default:
-      return "bg-muted text-foreground";
+      return "bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200";
   }
 };
+
+// Small KPI tile shared with OrgProfileManager — kept inline rather than
+// hoisted because the file is already self-contained. Don't extract until
+// a third caller actually needs it.
+type KpiTone = "primary" | "emerald" | "rose" | "blue" | "indigo";
+
+const KPI_TONE_MAP: Record<KpiTone, string> = {
+  primary: "bg-primary/10 text-primary",
+  emerald: "bg-emerald-50 text-emerald-600",
+  rose: "bg-rose-50 text-rose-600",
+  blue: "bg-blue-50 text-blue-600",
+  indigo: "bg-indigo-50 text-indigo-600",
+};
+
+const KpiTile = ({
+  icon: Icon,
+  label,
+  value,
+  tone,
+  hint,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  value: number;
+  tone: KpiTone;
+  hint?: string;
+}) => (
+  <div className="rounded-xl border border-border/60 bg-background/50 p-3 sm:p-4">
+    <div className="flex items-center gap-2.5">
+      <span
+        className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${KPI_TONE_MAP[tone]}`}
+      >
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          {label}
+        </p>
+        <p className="text-xl font-bold tabular-nums text-secondary">{value}</p>
+      </div>
+    </div>
+    {hint && (
+      <p className="mt-1.5 text-[10px] text-muted-foreground/80 truncate">{hint}</p>
+    )}
+  </div>
+);
 
 export default function SuperAdminProfileManager({
   title,
@@ -259,6 +326,10 @@ export default function SuperAdminProfileManager({
   // ---- Remove-from-org state ---------------------------------------------
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<ProfileItem | null>(null);
+  // The id of the profile whose edit sheet is open. Derived back to the
+  // live ProfileItem each render so updates inside the sheet stay in sync
+  // with refreshes of the underlying list.
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   // Stable dependency key so the listing refetches when the role set changes
   // (different page mounts pass different allowedRoles / excludedRoles).
@@ -772,6 +843,18 @@ export default function SuperAdminProfileManager({
     });
   }, [rangeEnd, rangeStart, t, totalCount]);
 
+  // Re-derive the currently-edited profile from the live list so updates
+  // performed inside the sheet (which trigger loadProfiles) reflect back
+  // into the sheet without us juggling separate state. Declared BEFORE the
+  // early returns below so the hook order stays stable across renders
+  // (Rules of Hooks — never call a hook after a conditional return).
+  const editing = editingId
+    ? profiles.find((p) => p.id === editingId) ?? null
+    : null;
+  useEffect(() => {
+    if (editingId && !editing) setEditingId(null);
+  }, [editingId, editing]);
+
   if (loading || isSuper === null) {
     return (
       <div className="flex min-h-screen items-center justify-center text-muted-foreground">
@@ -782,30 +865,84 @@ export default function SuperAdminProfileManager({
   if (!user) return <Navigate to="/auth" replace />;
   if (!isSuper) return <Unauthorized />;
 
+  // KPI strip derived from the *currently loaded* page rather than from
+  // server-side aggregates. Cheap, no extra round trip.
+  const activeCount = profiles.filter((p) => !p.banned).length;
+  const deactivatedCount = profiles.filter((p) => p.banned).length;
+  const globalCount = profiles.filter((p) => p.scope === "global").length;
+
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1">
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-secondary">
-            <HeaderIcon className="h-6 w-6 text-primary" />
-            {title}
-          </h1>
-          <p className="text-sm text-muted-foreground">{subtitle}</p>
+    <div className="mx-auto max-w-6xl space-y-5">
+      {/* ─── Page header card ─── title + CTA + KPI strip */}
+      <Card className="border-border/60 p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              {t("superAdminProfiles.eyebrow", { defaultValue: "Platform administration" })}
+            </p>
+            <div className="flex items-center gap-3">
+              <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <HeaderIcon className="h-5 w-5" />
+              </span>
+              <h1 className="text-2xl font-bold tracking-tight text-secondary md:text-3xl">
+                {title}
+              </h1>
+            </div>
+            <p className="max-w-2xl text-sm text-muted-foreground">{subtitle}</p>
+          </div>
           <Button
-            className="mt-2"
             onClick={() => {
               resetAddForm();
               setAddOpen(true);
             }}
             data-testid="add-member-button"
+            className="cursor-pointer shrink-0"
           >
             <UserPlus className="mr-2 h-4 w-4" />
             {t("superAdminProfiles.addMember", { defaultValue: "Add member" })}
           </Button>
         </div>
-        <div className="flex w-full max-w-2xl flex-wrap items-end gap-3 md:w-auto">
-          <div className="min-w-[220px] flex-1 space-y-1.5">
-            <Label htmlFor="profiles-search">
+
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <KpiTile
+            icon={Users}
+            label={t("superAdminProfiles.kpiTotal", { defaultValue: "Total" })}
+            value={totalCount}
+            tone="primary"
+          />
+          <KpiTile
+            icon={UserCheck}
+            label={t("superAdminProfiles.kpiActive", { defaultValue: "Active" })}
+            value={activeCount}
+            tone="emerald"
+            hint={totalCount > pageSize ? t("superAdminProfiles.kpiThisPage", { defaultValue: "this page" }) : undefined}
+          />
+          <KpiTile
+            icon={UserX}
+            label={t("superAdminProfiles.kpiDeactivated", { defaultValue: "Deactivated" })}
+            value={deactivatedCount}
+            tone="rose"
+            hint={totalCount > pageSize ? t("superAdminProfiles.kpiThisPage", { defaultValue: "this page" }) : undefined}
+          />
+          <KpiTile
+            icon={Globe}
+            label={t("superAdminProfiles.kpiPlatform", { defaultValue: "Platform" })}
+            value={globalCount}
+            tone="indigo"
+            hint={totalCount > pageSize ? t("superAdminProfiles.kpiThisPage", { defaultValue: "this page" }) : undefined}
+          />
+        </div>
+      </Card>
+
+      {/* ─── Toolbar card ─── search + filters grouped + clearly labeled */}
+      <Card className="border-border/60 p-4 shadow-sm sm:p-5">
+        <div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+          {t("superAdminProfiles.toolbar", { defaultValue: "Filters" })}
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <div className="space-y-1.5 lg:col-span-2">
+            <Label htmlFor="profiles-search" className="text-xs font-medium text-muted-foreground">
               {t("superAdminProfiles.searchLabel")}
             </Label>
             <div className="relative">
@@ -815,12 +952,14 @@ export default function SuperAdminProfileManager({
                 value={searchInput}
                 onChange={(event) => setSearchInput(event.target.value)}
                 placeholder={t("superAdminProfiles.searchPlaceholder")}
-                className="pl-9"
+                className="h-10 pl-9"
               />
             </div>
           </div>
-          <div className="w-full space-y-1.5 sm:w-44">
-            <Label>{t("superAdminProfiles.statusFilterLabel")}</Label>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground">
+              {t("superAdminProfiles.statusFilterLabel")}
+            </Label>
             <Select
               value={statusFilter}
               onValueChange={(value) => {
@@ -828,7 +967,7 @@ export default function SuperAdminProfileManager({
                 setPage(1);
               }}
             >
-              <SelectTrigger>
+              <SelectTrigger className="h-10 cursor-pointer">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -844,8 +983,10 @@ export default function SuperAdminProfileManager({
               </SelectContent>
             </Select>
           </div>
-          <div className="w-full space-y-1.5 sm:w-44">
-            <Label>{t("locations.country", { defaultValue: "Country" })}</Label>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground">
+              {t("locations.country", { defaultValue: "Country" })}
+            </Label>
             <Select
               value={countryFilter}
               onValueChange={(value) => {
@@ -853,7 +994,7 @@ export default function SuperAdminProfileManager({
                 setPage(1);
               }}
             >
-              <SelectTrigger>
+              <SelectTrigger className="h-10 cursor-pointer">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -870,8 +1011,10 @@ export default function SuperAdminProfileManager({
               </SelectContent>
             </Select>
           </div>
-          <div className="w-full space-y-1.5 sm:w-48">
-            <Label>{t("locations.state", { defaultValue: "State / Region" })}</Label>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground">
+              {t("locations.state", { defaultValue: "State / Region" })}
+            </Label>
             <Select
               value={stateFilter}
               onValueChange={(value) => {
@@ -880,7 +1023,7 @@ export default function SuperAdminProfileManager({
               }}
               disabled={countryFilter === COUNTRY_ALL}
             >
-              <SelectTrigger>
+              <SelectTrigger className="h-10 cursor-pointer">
                 <SelectValue
                   placeholder={t("locations.statePickCountryFirst", {
                     defaultValue: "Pick a country first",
@@ -901,8 +1044,10 @@ export default function SuperAdminProfileManager({
               </SelectContent>
             </Select>
           </div>
-          <div className="w-full space-y-1.5 sm:w-32">
-            <Label>{t("superAdminProfiles.pageSizeLabel")}</Label>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground">
+              {t("superAdminProfiles.pageSizeLabel")}
+            </Label>
             <Select
               value={String(pageSize)}
               onValueChange={(value) => {
@@ -910,7 +1055,7 @@ export default function SuperAdminProfileManager({
                 setPage(1);
               }}
             >
-              <SelectTrigger>
+              <SelectTrigger className="h-10 cursor-pointer">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -923,55 +1068,100 @@ export default function SuperAdminProfileManager({
             </Select>
           </div>
         </div>
-      </div>
+      </Card>
 
-      <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
-        <span>{paginationLabel}</span>
+      <div className="flex items-center justify-between gap-2 px-1 text-sm text-muted-foreground">
+        <span className="tabular-nums">{paginationLabel}</span>
         {fetching && (
-          <span className="flex items-center gap-1 text-xs">
-            <Loader2 className="h-3 w-3 animate-spin" />
+          <span className="flex items-center gap-1.5 text-xs">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
             {t("common.loading")}
           </span>
         )}
       </div>
 
       <div className="grid gap-3">
+        {fetching && profiles.length === 0 && (
+          <>
+            {[0, 1, 2].map((i) => (
+              <Card key={`skeleton-${i}`} className="border-border/60 p-5 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-12 w-12 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-48" />
+                    <Skeleton className="h-3 w-36" />
+                    <Skeleton className="h-3 w-24" />
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </>
+        )}
+
         {!fetching && profiles.length === 0 && (
-          <Card className="p-8 text-center text-muted-foreground shadow-card">
-            {t("superAdminProfiles.empty")}
+          <Card className="border-dashed border-border/60 p-10 text-center shadow-sm">
+            <div className="mx-auto mb-3 inline-flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <Users className="h-6 w-6" />
+            </div>
+            <p className="text-sm font-medium text-secondary">
+              {t("superAdminProfiles.emptyTitle", { defaultValue: "No profiles found" })}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t("superAdminProfiles.emptyHint", {
+                defaultValue: "Try clearing your filters or adjusting the search.",
+              })}
+            </p>
           </Card>
         )}
 
-        {profiles.map((profile) => {
-          const isSelf = profile.id === user.id;
-          const isBusy =
-            savingId === profile.id ||
-            banningId === profile.id ||
-            removingId === profile.id;
-          const dropdownRoles = roleDropdownOptions ?? getRoleOptions(profile.scope);
-          return (
-            <Card
-              key={profile.id}
-              className={`p-4 shadow-card ${profile.banned ? "border-destructive/40" : ""}`}
-            >
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div className="flex min-w-0 items-center gap-3">
-                  <Avatar className="h-12 w-12">
-                    <AvatarImage
-                      src={profile.avatar_url ?? undefined}
-                      alt={profile.full_name ?? profile.email ?? "Profile"}
-                    />
-                    <AvatarFallback>
-                      {getInitials(profile.full_name, profile.email)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate font-medium text-secondary">
-                        {profile.full_name || t("superAdminProfiles.unnamed")}
-                      </p>
+        {profiles.length > 0 && (
+          <Card className="border-border/60 shadow-sm overflow-hidden">
+            <ul className="divide-y divide-border/60">
+              {profiles.map((profile) => {
+                const isSelf = profile.id === user.id;
+                return (
+                  <li key={profile.id}>
+                    <button
+                      type="button"
+                      onClick={() => setEditingId(profile.id)}
+                      className={cn(
+                        "group flex w-full items-center gap-4 px-4 py-3 text-left transition-colors duration-200",
+                        "hover:bg-muted/40 focus-visible:outline-none focus-visible:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40",
+                        "cursor-pointer",
+                        profile.banned && "bg-destructive/[0.02]",
+                      )}
+                    >
+                      <Avatar className="h-10 w-10 shrink-0 ring-2 ring-border/40">
+                        <AvatarImage
+                          src={profile.avatar_url ?? undefined}
+                          alt={profile.full_name ?? profile.email ?? "Profile"}
+                        />
+                        <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
+                          {getInitials(profile.full_name, profile.email)}
+                        </AvatarFallback>
+                      </Avatar>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate font-semibold text-secondary">
+                            {profile.full_name || t("superAdminProfiles.unnamed")}
+                          </p>
+                          {isSelf && (
+                            <Badge className="bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200 text-[10px] font-medium px-1.5 py-0">
+                              {t("superAdminProfiles.youBadge", { defaultValue: "You" })}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {profile.email || "—"}
+                        </p>
+                      </div>
+
                       <Badge
-                        className={getRoleBadgeClass(profile.effectiveRole)}
+                        className={cn(
+                          "hidden sm:inline-flex shrink-0 font-medium",
+                          getRoleBadgeClass(profile.effectiveRole),
+                        )}
                         data-testid="profile-role-badge"
                       >
                         {profile.effectiveRole
@@ -980,40 +1170,193 @@ export default function SuperAdminProfileManager({
                             })
                           : t("superAdminProfiles.noRole")}
                       </Badge>
-                      <Badge variant="outline">
-                        {profile.scope === "global"
-                          ? t("superAdminProfiles.globalScope")
-                          : t("superAdminProfiles.orgScope")}
-                      </Badge>
-                      {profile.organizationName && (
-                        <Badge variant="secondary">
-                          {profile.organizationName}
-                        </Badge>
-                      )}
-                      {profile.banned && (
-                        <Badge variant="destructive">
-                          {t("superAdminProfiles.bannedBadge")}
-                        </Badge>
-                      )}
+
+                      <div className="hidden md:flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground w-[120px]">
+                        <span
+                          className={cn(
+                            "h-2 w-2 rounded-full",
+                            profile.banned ? "bg-rose-500" : "bg-emerald-500",
+                          )}
+                          aria-hidden="true"
+                        />
+                        {profile.banned
+                          ? t("superAdminProfiles.bannedBadge")
+                          : t("superAdminProfiles.statusActive")}
+                      </div>
+
+                      <div className="hidden lg:flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground w-[140px]">
+                        <Building2 className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">
+                          {profile.organizationName ||
+                            (profile.scope === "global"
+                              ? t("superAdminProfiles.globalScope")
+                              : t("superAdminProfiles.noOrg", { defaultValue: "No org" }))}
+                        </span>
+                      </div>
+
+                      <ChevronRight
+                        className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        )}
+      </div>
+
+      <Card className="border-border/60 p-3 shadow-sm sm:p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground tabular-nums">{paginationLabel}</p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={safePage <= 1 || fetching}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="cursor-pointer"
+            >
+              <ChevronLeft className="mr-1 h-4 w-4" />
+              {t("superAdminProfiles.prev")}
+            </Button>
+            <span className="rounded-md bg-muted px-3 py-1 text-sm font-medium tabular-nums text-secondary">
+              {t("superAdminProfiles.pageOf", {
+                page: safePage,
+                total: totalPages,
+                defaultValue: `${safePage} / ${totalPages}`,
+              })}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={safePage >= totalPages || fetching}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              className="cursor-pointer"
+            >
+              {t("superAdminProfiles.next")}
+              <ChevronRight className="ml-1 h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* ─── Edit sheet ─── slides in from the right with the full edit
+          panel. Triggered by clicking a row. */}
+      <Sheet
+        open={!!editing}
+        onOpenChange={(open) => !open && setEditingId(null)}
+      >
+        <SheetContent className="w-full overflow-y-auto sm:max-w-md">
+          {editing && (() => {
+            const isSelf = editing.id === user.id;
+            const isBusy =
+              savingId === editing.id ||
+              banningId === editing.id ||
+              removingId === editing.id;
+            const dropdownRoles =
+              roleDropdownOptions ?? getRoleOptions(editing.scope);
+            const locationText = [editing.state, editing.country]
+              .filter(Boolean)
+              .join(", ");
+            return (
+              <>
+                <SheetHeader className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-14 w-14 ring-2 ring-border/40">
+                      <AvatarImage
+                        src={editing.avatar_url ?? undefined}
+                        alt={editing.full_name ?? editing.email ?? "Profile"}
+                      />
+                      <AvatarFallback className="bg-primary/10 text-primary text-lg font-medium">
+                        {getInitials(editing.full_name, editing.email)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1 text-left">
+                      <SheetTitle className="truncate text-base font-semibold text-secondary">
+                        {editing.full_name || t("superAdminProfiles.unnamed")}
+                      </SheetTitle>
+                      <SheetDescription className="truncate text-xs text-muted-foreground">
+                        {editing.email || "—"}
+                      </SheetDescription>
                     </div>
-                    <p className="truncate text-sm text-muted-foreground">
-                      {profile.email || "—"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {profile.phone || "—"}
-                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Badge
+                      className={cn("font-medium", getRoleBadgeClass(editing.effectiveRole))}
+                    >
+                      {editing.effectiveRole
+                        ? t(getRoleLabelKey(editing.effectiveRole), {
+                            defaultValue: editing.effectiveRole,
+                          })
+                        : t("superAdminProfiles.noRole")}
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className="border-border/60 bg-background text-[11px] font-medium text-muted-foreground"
+                    >
+                      {editing.scope === "global"
+                        ? t("superAdminProfiles.globalScope")
+                        : t("superAdminProfiles.orgScope")}
+                    </Badge>
+                    <Badge
+                      className={cn(
+                        "font-medium",
+                        editing.banned
+                          ? "bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-200"
+                          : "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200",
+                      )}
+                    >
+                      {editing.banned
+                        ? t("superAdminProfiles.bannedBadge")
+                        : t("superAdminProfiles.statusActive")}
+                    </Badge>
+                    {isSelf && (
+                      <Badge className="bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200 font-medium">
+                        {t("superAdminProfiles.youBadge", { defaultValue: "You" })}
+                      </Badge>
+                    )}
+                  </div>
+                </SheetHeader>
+
+                {/* Quick-glance contact + location summary */}
+                <div className="mt-5 space-y-2 rounded-lg border border-border/60 bg-muted/30 p-3">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Mail className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{editing.email || "—"}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Phone className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{editing.phone || "—"}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Building2 className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">
+                      {editing.organizationName ||
+                        (editing.scope === "global"
+                          ? t("superAdminProfiles.globalScope")
+                          : t("superAdminProfiles.noOrg", { defaultValue: "No org" }))}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <MapPin className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{locationText || "—"}</span>
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-3 md:min-w-[260px]">
+                {/* Editable fields */}
+                <div className="mt-5 space-y-4">
                   <div className="space-y-1.5">
-                    <Label>{t("team.role")}</Label>
+                    <Label className="text-xs font-medium text-muted-foreground">
+                      {t("team.role")}
+                    </Label>
                     <Select
-                      value={profile.effectiveRole ?? ""}
-                      onValueChange={(value) => updateRole(profile, value)}
+                      value={editing.effectiveRole ?? ""}
+                      onValueChange={(value) => updateRole(editing, value)}
                       disabled={isBusy || isSelf}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="h-10 cursor-pointer">
                         <SelectValue
                           placeholder={t("superAdminProfiles.noRole")}
                         />
@@ -1028,19 +1371,23 @@ export default function SuperAdminProfileManager({
                     </Select>
                   </div>
 
-                  {profile.scope === "org" && (
+                  {editing.scope === "org" && (
                     <div className="space-y-1.5">
-                      <Label>
-                        {t("superAdminProfiles.organization", { defaultValue: "Organisation" })}
+                      <Label className="text-xs font-medium text-muted-foreground">
+                        {t("superAdminProfiles.organization", {
+                          defaultValue: "Organisation",
+                        })}
                       </Label>
                       <Select
-                        value={profile.org_id ?? ""}
-                        onValueChange={(value) => updateOrg(profile, value)}
+                        value={editing.org_id ?? ""}
+                        onValueChange={(value) => updateOrg(editing, value)}
                         disabled={isBusy || isSelf}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className="h-10 cursor-pointer">
                           <SelectValue
-                            placeholder={t("superAdminProfiles.noOrg", { defaultValue: "Aucune organisation" })}
+                            placeholder={t("superAdminProfiles.noOrg", {
+                              defaultValue: "Aucune organisation",
+                            })}
                           />
                         </SelectTrigger>
                         <SelectContent>
@@ -1056,17 +1403,19 @@ export default function SuperAdminProfileManager({
 
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1.5">
-                      <Label>{t("locations.country", { defaultValue: "Country" })}</Label>
+                      <Label className="text-xs font-medium text-muted-foreground">
+                        {t("locations.country", { defaultValue: "Country" })}
+                      </Label>
                       <Select
-                        value={profile.country ?? COUNTRY_NONE}
+                        value={editing.country ?? COUNTRY_NONE}
                         onValueChange={(value) =>
-                          updateLocation(profile, {
+                          updateLocation(editing, {
                             country: value === COUNTRY_NONE ? null : value,
                           })
                         }
                         disabled={isBusy}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className="h-10 cursor-pointer">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1084,17 +1433,19 @@ export default function SuperAdminProfileManager({
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label>{t("locations.state", { defaultValue: "State / Region" })}</Label>
+                      <Label className="text-xs font-medium text-muted-foreground">
+                        {t("locations.state", { defaultValue: "State / Region" })}
+                      </Label>
                       <Select
-                        value={profile.state ?? STATE_NONE}
+                        value={editing.state ?? STATE_NONE}
                         onValueChange={(value) =>
-                          updateLocation(profile, {
+                          updateLocation(editing, {
                             state: value === STATE_NONE ? null : value,
                           })
                         }
-                        disabled={isBusy || !profile.country}
+                        disabled={isBusy || !editing.country}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className="h-10 cursor-pointer">
                           <SelectValue
                             placeholder={t("locations.statePickCountryFirst", {
                               defaultValue: "Pick a country first",
@@ -1105,7 +1456,7 @@ export default function SuperAdminProfileManager({
                           <SelectItem value={STATE_NONE}>
                             {t("locations.unset", { defaultValue: "—" })}
                           </SelectItem>
-                          {getStatesForCountry(profile.country).map((state) => (
+                          {getStatesForCountry(editing.country).map((state) => (
                             <SelectItem key={state.code} value={state.code}>
                               {state.name}
                             </SelectItem>
@@ -1114,50 +1465,55 @@ export default function SuperAdminProfileManager({
                       </Select>
                     </div>
                   </div>
+                </div>
 
-                  {profile.banned ? (
+                {/* Danger zone */}
+                <div className="mt-6 space-y-2 border-t border-border/60 pt-5">
+                  {editing.banned ? (
                     <Button
                       variant="outline"
-                      onClick={() => toggleBan(profile, false)}
+                      onClick={() => toggleBan(editing, false)}
                       disabled={isBusy || isSelf}
+                      className="w-full cursor-pointer h-10"
                     >
-                      {banningId === profile.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                      {banningId === editing.id ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
-                        <ShieldCheck className="h-4 w-4" />
+                        <ShieldCheck className="mr-2 h-4 w-4" />
                       )}
                       {t("superAdminProfiles.unbanAction")}
                     </Button>
                   ) : (
                     <Button
-                      variant="destructive"
-                      onClick={() => setConfirmBan(profile)}
+                      variant="outline"
+                      onClick={() => setConfirmBan(editing)}
                       disabled={
-                        isBusy || isSelf || profile.effectiveRole === "super_admin"
+                        isBusy || isSelf || editing.effectiveRole === "super_admin"
                       }
+                      className="w-full cursor-pointer h-10 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50"
                     >
-                      {banningId === profile.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                      {banningId === editing.id ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
-                        <ShieldOff className="h-4 w-4" />
+                        <ShieldOff className="mr-2 h-4 w-4" />
                       )}
                       {t("superAdminProfiles.banAction")}
                     </Button>
                   )}
 
                   <Button
-                    variant="outline"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => setConfirmRemove(profile)}
+                    variant="ghost"
+                    onClick={() => setConfirmRemove(editing)}
                     disabled={
-                      isBusy || isSelf || profile.effectiveRole === "super_admin"
+                      isBusy || isSelf || editing.effectiveRole === "super_admin"
                     }
+                    className="w-full cursor-pointer h-10 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     data-testid="remove-member-button"
                   >
-                    {removingId === profile.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                    {removingId === editing.id ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     ) : (
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="mr-2 h-4 w-4" />
                     )}
                     {t("superAdminProfiles.removeAction", {
                       defaultValue: "Unassign from all properties",
@@ -1165,47 +1521,16 @@ export default function SuperAdminProfileManager({
                   </Button>
 
                   {isSelf && (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground text-center pt-1">
                       {t("superAdminProfiles.selfRoleHint")}
                     </p>
                   )}
                 </div>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">{paginationLabel}</p>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={safePage <= 1 || fetching}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            <ChevronLeft className="h-4 w-4" />
-            {t("superAdminProfiles.prev")}
-          </Button>
-          <span className="text-sm tabular-nums text-muted-foreground">
-            {t("superAdminProfiles.pageOf", {
-              page: safePage,
-              total: totalPages,
-              defaultValue: `${safePage} / ${totalPages}`,
-            })}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={safePage >= totalPages || fetching}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-          >
-            {t("superAdminProfiles.next")}
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+              </>
+            );
+          })()}
+        </SheetContent>
+      </Sheet>
 
       <AlertDialog
         open={!!confirmBan}

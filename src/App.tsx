@@ -42,8 +42,10 @@ import SuperAdminAdmins from "./pages/SuperAdminAdmins";
 import SuperAdminCohosts from "./pages/SuperAdminCohosts";
 import SuperAdminEmployees from "./pages/SuperAdminEmployees";
 import SuperAdminStaff from "./pages/SuperAdminStaff";
+import SuperAdminAccessRequests from "./pages/SuperAdminAccessRequests";
 import AdminCohosts from "./pages/AdminCohosts";
 import AdminEmployees from "./pages/AdminEmployees";
+import UserDashboard from "./pages/UserDashboard";
 import MyInvoices from "./pages/MyInvoices";
 import GuestPortal from "./pages/GuestPortal";
 import RedeemCoupon from "./pages/RedeemCoupon";
@@ -75,12 +77,12 @@ const App = () => (
             <Route path="/r/:slug" element={<ReportIssue />} />
             <Route path="/v/:orgId" element={<Showcase />} />
             <Route path="/redeem/:code" element={<RedeemCoupon />} />
-            <Route path="/guest" element={<ProtectedRoute><GuestPortal /></ProtectedRoute>} />
-            <Route path="/guest-preview/:reservationId" element={<ProtectedRoute><GuestPortal /></ProtectedRoute>} />
+            <Route path="/guest" element={<ProtectedRoute allow={["guest"]}><GuestPortal /></ProtectedRoute>} />
+            <Route path="/guest-preview/:reservationId" element={<ProtectedRoute allow={["guest"]}><GuestPortal /></ProtectedRoute>} />
             <Route
               path="/super-admin"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allow={["super_admin"]}>
                   <AppLayout><SuperAdmin /></AppLayout>
                 </ProtectedRoute>
               }
@@ -88,7 +90,7 @@ const App = () => (
             <Route
               path="/super-admin/orgs/:id"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allow={["super_admin"]}>
                   <AppLayout><SuperAdminOrg /></AppLayout>
                 </ProtectedRoute>
               }
@@ -96,7 +98,7 @@ const App = () => (
             <Route
               path="/super-admin/billing"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allow={["super_admin"]}>
                   <AppLayout><SuperAdminBilling /></AppLayout>
                 </ProtectedRoute>
               }
@@ -104,7 +106,7 @@ const App = () => (
             <Route
               path="/super-admin/profiles"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allow={["super_admin"]}>
                   <AppLayout><SuperAdminOtherProfiles /></AppLayout>
                 </ProtectedRoute>
               }
@@ -112,7 +114,7 @@ const App = () => (
             <Route
               path="/super-admin/admins"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allow={["super_admin"]}>
                   <AppLayout><SuperAdminAdmins /></AppLayout>
                 </ProtectedRoute>
               }
@@ -120,7 +122,7 @@ const App = () => (
             <Route
               path="/super-admin/cohosts"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allow={["super_admin"]}>
                   <AppLayout><SuperAdminCohosts /></AppLayout>
                 </ProtectedRoute>
               }
@@ -128,7 +130,7 @@ const App = () => (
             <Route
               path="/super-admin/employees"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allow={["super_admin"]}>
                   <AppLayout><SuperAdminEmployees /></AppLayout>
                 </ProtectedRoute>
               }
@@ -136,8 +138,24 @@ const App = () => (
             <Route
               path="/super-admin/staff"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allow={["super_admin"]}>
                   <AppLayout><SuperAdminStaff /></AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/super-admin/access-requests"
+              element={
+                <ProtectedRoute allow={["super_admin"]}>
+                  <AppLayout><SuperAdminAccessRequests /></AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/user"
+              element={
+                <ProtectedRoute allow={["user"]}>
+                  <AppLayout><UserDashboard /></AppLayout>
                 </ProtectedRoute>
               }
             />
@@ -161,7 +179,7 @@ const App = () => (
             <Route
               path="/admin/cohosts"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allow={["admin"]}>
                   <AppLayout><AdminCohosts /></AppLayout>
                 </ProtectedRoute>
               }
@@ -169,7 +187,7 @@ const App = () => (
             <Route
               path="/admin/employees"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allow={["admin"]}>
                   <AppLayout><AdminEmployees /></AppLayout>
                 </ProtectedRoute>
               }

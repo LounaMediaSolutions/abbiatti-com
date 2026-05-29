@@ -8,8 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CalendarRange, ChevronLeft, ChevronRight, MapPin, Link2 } from "lucide-react";
-import { addDays, addMonths, endOfMonth, format, isWithinInterval, parseISO, startOfDay, startOfMonth } from "date-fns";
+import { CalendarRange, CalendarCheck, ChevronLeft, ChevronRight, MapPin, Link2, Users } from "lucide-react";
+import { addDays, addMonths, endOfMonth, format, getDay, isSameDay, isWithinInterval, parseISO, startOfDay, startOfMonth, startOfWeek } from "date-fns";
 import { PROPERTY_CATEGORIES } from "./Properties";
 import { cn } from "@/lib/utils";
 import { IcalManager } from "@/components/IcalManager";
@@ -53,11 +53,14 @@ type Reservation = {
 };
 
 type ViewMode = "14d" | "30d" | "month" | "3mo";
-const VIEW_OPTIONS: { value: ViewMode; label: string }[] = [
-  { value: "month", label: "1 mois" },
-];
 const LONG_VIEW_MONTHS = 1; // nombre de mois affichés en mode long verrouillé
 const CONFIRMED_STATUSES = ["confirmed", "in_progress", "completed"];
+
+// Monday-first weekday labels for the calendar header. Derived from date-fns
+// so they follow the active locale rather than being hand-listed.
+const WEEKDAY_LABELS = Array.from({ length: 7 }, (_, i) =>
+  format(addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), i), "EEEEEE"),
+);
 
 export default function Availability({ propertyId, embedded = false }: { propertyId?: string; embedded?: boolean } = {}) {
   const { t } = useTranslation();
@@ -305,48 +308,82 @@ export default function Availability({ propertyId, embedded = false }: { propert
 
         {/* CALENDAR */}
         <TabsContent value="calendar">
-          <Card className="p-3 overflow-x-auto">
-            <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
-              <Button variant="outline" size="sm" onClick={goPrev}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <span className="text-sm font-medium">
-                {viewMode === "month" || viewMode === "3mo"
-                  ? `${format(days[0], "MMM yyyy")} → ${format(days[days.length - 1], "MMM yyyy")}`
-                  : `${format(days[0], "dd MMM")} → ${format(days[days.length - 1], "dd MMM yyyy")}`}
-              </span>
-              <div className="flex items-center gap-2">
-                <div className="flex rounded-md border overflow-hidden text-xs">
-                  {VIEW_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => setViewMode(opt.value)}
-                      className={cn(
-                        "px-2.5 py-1 transition",
-                        viewMode === opt.value ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted",
-                      )}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-                <Button variant="outline" size="sm" onClick={goNext}>
+          <Card className="p-3 sm:p-4">
+            {/* Toolbar — month navigation + jump-to-today */}
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 cursor-pointer"
+                  onClick={goPrev}
+                  aria-label={t("availability.prevMonth", { defaultValue: "Previous month" })}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 cursor-pointer"
+                  onClick={goNext}
+                  aria-label={t("availability.nextMonth", { defaultValue: "Next month" })}
+                >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
+                <h2 className="ml-1 text-base font-semibold capitalize text-secondary">
+                  {format(days[0], "MMMM yyyy")}
+                </h2>
               </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 cursor-pointer gap-1.5 text-xs"
+                onClick={() => setMonthAnchor(startOfMonth(new Date()))}
+              >
+                <CalendarCheck className="h-3.5 w-3.5" />
+                {t("availability.today", { defaultValue: "Today" })}
+              </Button>
             </div>
-            <div className="space-y-4">
-              {filteredProps.map((p) => (
-                <StackedPropertyRow key={p.id} p={p} days={days} getDayStatus={getDayStatus} onSync={() => setIcalProperty(p)} />
-              ))}
-              {filteredProps.length === 0 && (
-                <p className="text-center text-muted-foreground py-8 text-sm">{t("availability.noneAvailable")}</p>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-3 mt-3 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-success/30 inline-block" /> {t("availability.free")}</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-400 inline-block" /> Non confirmée</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-destructive/70 inline-block" /> {t("availability.booked")}</span>
+
+            {filteredProps.length === 0 ? (
+              <div className="py-12 text-center">
+                <div className="mx-auto mb-3 inline-flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <CalendarRange className="h-6 w-6" />
+                </div>
+                <p className="text-sm text-muted-foreground">{t("availability.noneAvailable")}</p>
+              </div>
+            ) : (
+              <>
+                {/* Shared weekday header — aligns with every property's grid below */}
+                <div className="mb-2 grid grid-cols-7 gap-1 px-0.5 sm:gap-1.5">
+                  {WEEKDAY_LABELS.map((w) => (
+                    <div
+                      key={w}
+                      className="text-center text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+                    >
+                      {w}
+                    </div>
+                  ))}
+                </div>
+                <div className="divide-y divide-border/60">
+                  {filteredProps.map((p) => (
+                    <StackedPropertyRow key={p.id} p={p} days={days} getDayStatus={getDayStatus} onSync={() => setIcalProperty(p)} />
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* Legend */}
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-2.5 w-2.5 rounded-sm border border-emerald-200 bg-emerald-100" /> {t("availability.free")}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-400" /> Non confirmée
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-2.5 w-2.5 rounded-sm bg-rose-500" /> {t("availability.booked")}
+              </span>
             </div>
           </Card>
         </TabsContent>
@@ -381,7 +418,9 @@ export default function Availability({ propertyId, embedded = false }: { propert
                       <MapPin className="h-3 w-3" /> {[p.city, p.country].filter(Boolean).join(", ")}
                     </p>
                   )}
-                  <p className="text-xs text-muted-foreground mt-1">👤 {p.max_guests ?? "?"} max</p>
+                  <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                    <Users className="h-3 w-3" /> {p.max_guests ?? "?"} max
+                  </p>
                   {p.categories && p.categories.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-2">
                       {p.categories.map((c) => {
@@ -429,53 +468,59 @@ function StackedPropertyRow({
   getDayStatus: (id: string, d: Date) => "confirmed" | "pending" | null;
   onSync: () => void;
 }) {
-  // Chunk days into bands of 7
-  const bands: Date[][] = [];
-  for (let i = 0; i < days.length; i += 7) bands.push(days.slice(i, i + 7));
+  const today = new Date();
+  // Leading empty cells so day 1 lands under its real weekday column
+  // (Monday-first, matching the shared header above).
+  const leadingPad = days.length > 0 ? (getDay(days[0]) + 6) % 7 : 0;
 
   return (
-    <Card className="p-3">
-      <div className="flex items-center justify-between mb-2 gap-2">
+    <div className="py-3 first:pt-0 last:pb-0">
+      <div className="mb-2 flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <span className="font-medium truncate block text-sm">{p.name}</span>
+          <span className="block truncate text-sm font-semibold text-secondary">{p.name}</span>
           {(p.city || p.country) && (
-            <span className="text-muted-foreground text-[11px] truncate block">
+            <span className="flex items-center gap-1 truncate text-[11px] text-muted-foreground">
+              <MapPin className="h-3 w-3 shrink-0" />
               {[p.city, p.country].filter(Boolean).join(", ")}
             </span>
           )}
         </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={onSync} title="iCal">
-          <Link2 className="h-3.5 w-3.5" />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0 cursor-pointer text-muted-foreground hover:text-primary"
+          onClick={onSync}
+          title="iCal"
+        >
+          <Link2 className="h-4 w-4" />
         </Button>
       </div>
-      <div className="space-y-2">
-        {bands.map((band, bi) => (
-          <div key={bi} className="grid grid-cols-7 gap-1.5">
-            {band.map((d) => {
-              const status = getDayStatus(p.id, d);
-              const label = status === "confirmed" ? "Réservé" : status === "pending" ? "Non confirmée" : "Libre";
-              return (
-                <div
-                  key={d.toISOString()}
-                  title={`${p.name} · ${format(d, "dd MMM")} · ${label}`}
-                  className={cn(
-                    "rounded-md min-h-[68px] sm:min-h-[80px] flex flex-col items-center justify-center text-xs border",
-                    status === "confirmed" && "bg-destructive/70 text-destructive-foreground border-destructive/70",
-                    status === "pending" && "bg-amber-400 text-amber-950 border-amber-400",
-                    !status && "bg-success/15 border-success/20 text-foreground/70",
-                  )}
-                >
-                  <span className="font-semibold leading-none text-base">{format(d, "dd")}</span>
-                  <span className="opacity-70 leading-none mt-1 text-[11px]">{format(d, "EEE")}</span>
-                </div>
-              );
-            })}
-            {/* Fill empty cells if last band shorter */}
-            {band.length < 7 &&
-              Array.from({ length: 7 - band.length }).map((_, i) => <div key={`pad-${i}`} />)}
-          </div>
+      <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
+        {Array.from({ length: leadingPad }).map((_, i) => (
+          <div key={`pad-${i}`} aria-hidden="true" />
         ))}
+        {days.map((d) => {
+          const status = getDayStatus(p.id, d);
+          const isToday = isSameDay(d, today);
+          const label =
+            status === "confirmed" ? "Réservé" : status === "pending" ? "Non confirmée" : "Libre";
+          return (
+            <div
+              key={d.toISOString()}
+              title={`${p.name} · ${format(d, "dd MMM")} · ${label}`}
+              className={cn(
+                "relative flex aspect-square min-h-[38px] items-center justify-center rounded-lg border text-sm transition-colors",
+                status === "confirmed" && "border-transparent bg-rose-500/90 text-white",
+                status === "pending" && "border-transparent bg-amber-400 text-amber-950",
+                !status && "border-emerald-100 bg-emerald-50 text-emerald-800 hover:bg-emerald-100",
+                isToday && "font-bold ring-2 ring-primary ring-offset-1 ring-offset-card",
+              )}
+            >
+              <span className="font-semibold leading-none">{format(d, "d")}</span>
+            </div>
+          );
+        })}
       </div>
-    </Card>
+    </div>
   );
 }
