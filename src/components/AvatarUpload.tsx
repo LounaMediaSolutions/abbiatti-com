@@ -7,6 +7,16 @@ import { PHOTO_ACCEPT, validatePhotoFile } from "@/lib/photoUpload";
 
 interface Props {
   userId: string;
+  /**
+   * Organization the avatar belongs to. REQUIRED for upload to succeed: the
+   * `avatars` storage bucket RLS scopes objects by an org folder and checks
+   * `is_org_member(auth.uid(), (storage.foldername(name))[1]::uuid)`, so the
+   * path convention is `<organizationId>/<userId>.<ext>`. Uploading under any
+   * non-UUID folder (e.g. the old `users/`) makes the policy's `::uuid` cast
+   * throw and the upload is denied. Pass the uploader's own org (for self
+   * edits) or the managed member's org (admins/cohosts edit same-org members).
+   */
+  organizationId: string | null | undefined;
   currentUrl?: string | null;
   fallbackEmoji?: string;
   size?: "sm" | "md" | "lg";
@@ -15,7 +25,7 @@ interface Props {
 
 const sizeMap = { sm: "h-12 w-12 text-xl", md: "h-16 w-16 text-2xl", lg: "h-24 w-24 text-4xl" };
 
-export function AvatarUpload({ userId, currentUrl, fallbackEmoji = "👤", size = "md", onUploaded }: Props) {
+export function AvatarUpload({ userId, organizationId, currentUrl, fallbackEmoji = "👤", size = "md", onUploaded }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [url, setUrl] = useState<string | null>(currentUrl ?? null);
@@ -29,10 +39,19 @@ export function AvatarUpload({ userId, currentUrl, fallbackEmoji = "👤", size 
       if (inputRef.current) inputRef.current.value = "";
       return;
     }
+    // Without an org we can't build a path the storage RLS will accept, so
+    // bail with a clear message instead of attempting an upload that the
+    // policy's `::uuid` cast would reject.
+    if (!organizationId) {
+      toast.error("No organization — cannot upload avatar.");
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
     setUploading(true);
     try {
       const ext = file.name.split(".").pop() || "jpg";
-      const path = `users/${userId}.${ext}`;
+      // Path convention enforced by the avatars bucket RLS: <org_id>/<user_id>.
+      const path = `${organizationId}/${userId}.${ext}`;
       const { error: upErr } = await supabase.storage
         .from("avatars")
         .upload(path, file, { upsert: true, contentType: file.type });
@@ -55,6 +74,12 @@ export function AvatarUpload({ userId, currentUrl, fallbackEmoji = "👤", size 
     }
   }
 
+  // Without an org we cannot construct a path the storage RLS will accept, so
+  // the upload button is disabled with a clear tooltip rather than waiting for
+  // the user to pick a file and then erroring. Avoids the race where parent
+  // state (org_id) is still resolving on first render.
+  const canUpload = !!organizationId;
+
   return (
     <div className="relative inline-block">
       {url ? (
@@ -67,9 +92,10 @@ export function AvatarUpload({ userId, currentUrl, fallbackEmoji = "👤", size 
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        disabled={uploading}
-        className="absolute -bottom-1 -right-1 h-7 w-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-md hover:opacity-90 disabled:opacity-50"
-        aria-label="Upload"
+        disabled={uploading || !canUpload}
+        title={canUpload ? undefined : "Avatar upload unavailable until your organization is loaded"}
+        className="absolute -bottom-1 -right-1 h-7 w-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-md hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        aria-label="Upload avatar"
       >
         {uploading ? <Upload className="h-3 w-3 animate-pulse" /> : <Camera className="h-3.5 w-3.5" />}
       </button>

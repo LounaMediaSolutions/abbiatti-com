@@ -353,9 +353,9 @@ export default function Availability({ propertyId, embedded = false }: { propert
                 <p className="text-sm text-muted-foreground">{t("availability.noneAvailable")}</p>
               </div>
             ) : (
-              <>
+              <div className="max-w-md">
                 {/* Shared weekday header — aligns with every property's grid below */}
-                <div className="mb-2 grid grid-cols-7 gap-1 px-0.5 sm:gap-1.5">
+                <div className="mb-1.5 grid grid-cols-7 gap-1 px-0.5">
                   {WEEKDAY_LABELS.map((w) => (
                     <div
                       key={w}
@@ -370,7 +370,7 @@ export default function Availability({ propertyId, embedded = false }: { propert
                     <StackedPropertyRow key={p.id} p={p} days={days} getDayStatus={getDayStatus} onSync={() => setIcalProperty(p)} />
                   ))}
                 </div>
-              </>
+              </div>
             )}
 
             {/* Legend */}
@@ -495,7 +495,7 @@ function StackedPropertyRow({
           <Link2 className="h-4 w-4" />
         </Button>
       </div>
-      <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
+      <div className="grid grid-cols-7 gap-1">
         {Array.from({ length: leadingPad }).map((_, i) => (
           <div key={`pad-${i}`} aria-hidden="true" />
         ))}
@@ -509,7 +509,7 @@ function StackedPropertyRow({
               key={d.toISOString()}
               title={`${p.name} · ${format(d, "dd MMM")} · ${label}`}
               className={cn(
-                "relative flex aspect-square min-h-[38px] items-center justify-center rounded-lg border text-sm transition-colors",
+                "relative flex h-8 items-center justify-center rounded-md border text-xs transition-colors",
                 status === "confirmed" && "border-transparent bg-rose-500/90 text-white",
                 status === "pending" && "border-transparent bg-amber-400 text-amber-950",
                 !status && "border-emerald-100 bg-emerald-50 text-emerald-800 hover:bg-emerald-100",

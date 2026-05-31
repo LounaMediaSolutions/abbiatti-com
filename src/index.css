@@ -1,3 +1,10 @@
+/* Premium typography — Playfair Display (elegant serif headings) + Inter
+   (clean, high-legibility body). The font stylesheet is loaded from index.html
+   via <link rel="preconnect"> + a non-blocking <link>, NOT a CSS @import here:
+   a top-level @import is render-blocking and fails closed on networks that
+   block fonts.googleapis.com. The body/heading font-family declarations below
+   always list local fallbacks so first paint never waits on the network. */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -35,6 +42,11 @@
     --warning: 42 75% 52%;         /* Mustard */
     --warning-foreground: 205 45% 14%;
 
+    /* Antique gold — the luxury accent. Used sparingly for hairlines,
+       eyebrows and premium highlights, never as a fill for large areas. */
+    --gold: 36 52% 46%;
+    --gold-foreground: 40 35% 96%;
+
     --muted: 40 22% 86%;
     --muted-foreground: 205 18% 38%;
 
@@ -49,8 +61,10 @@
 
     --gradient-hero: linear-gradient(135deg, hsl(205 55% 22%), hsl(188 45% 42%) 60%, hsl(350 55% 65%));
     --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)));
-    --shadow-soft: 0 4px 24px -6px hsl(205 50% 14% / 0.18);
-    --shadow-card: 0 2px 14px -4px hsl(205 50% 14% / 0.1);
+    --gradient-gold: linear-gradient(135deg, hsl(40 60% 58%), hsl(34 48% 42%));
+    /* Softer, more diffuse elevation for a refined, expensive feel. */
+    --shadow-soft: 0 8px 30px -10px hsl(205 50% 14% / 0.16);
+    --shadow-card: 0 1px 2px hsl(205 50% 14% / 0.04), 0 6px 20px -8px hsl(205 50% 14% / 0.08);
 
     --sidebar-background: 205 55% 16%;
     --sidebar-foreground: 40 30% 92%;
@@ -82,6 +96,10 @@
     --border: 20 18% 22%;
     --input: 20 18% 22%;
     --ring: 18 85% 60%;
+
+    --gold: 38 58% 56%;
+    --gold-foreground: 20 25% 10%;
+    --gradient-gold: linear-gradient(135deg, hsl(40 62% 62%), hsl(34 50% 48%));
   }
 }
 
@@ -89,15 +107,31 @@
   * { @apply border-border; }
   body {
     @apply bg-background text-foreground;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
-  /* RTL support for Arabic */
+  /* Page-level titles wear the serif display face for an editorial, luxury
+     real-estate feel. Scoped to h1 so dense component headings stay clean. */
+  h1 {
+    font-family: "Playfair Display", Georgia, "Times New Roman", serif;
+    letter-spacing: -0.01em;
+  }
+  /* RTL support for Arabic — keep a neutral sans, serif Latin faces don't
+     shape Arabic well. */
   [dir="rtl"] body { font-family: "Segoe UI", Tahoma, sans-serif; }
+  [dir="rtl"] h1 { font-family: "Segoe UI", Tahoma, sans-serif; letter-spacing: 0; }
 }
 
 @layer utilities {
   .bg-gradient-hero { background: var(--gradient-hero); }
   .bg-gradient-primary { background: var(--gradient-primary); }
+  .bg-gradient-gold { background: var(--gradient-gold); }
   .shadow-soft { box-shadow: var(--shadow-soft); }
   .shadow-card { box-shadow: var(--shadow-card); }
+  /* Opt-in serif display face for hero numerals / marketing headings. */
+  .font-display {
+    font-family: "Playfair Display", Georgia, "Times New Roman", serif;
+  }
 }

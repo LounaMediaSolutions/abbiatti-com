@@ -154,6 +154,22 @@ const Welcome = () => {
         }}
       />
 
+      {/* Ambient glows — a warm gold highlight + a cool brand highlight give
+          the flat gradient depth and a premium, dimensional feel. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -top-24 -right-24 h-80 w-80 rounded-full bg-gold/20 blur-3xl"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-white/10 blur-3xl"
+      />
+      {/* Bottom vignette to anchor content and frame the footer. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/25 to-transparent"
+      />
+
       <div className="absolute top-4 right-4 z-10">
         <LanguageSwitcher />
       </div>

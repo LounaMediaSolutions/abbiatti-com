@@ -18,6 +18,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { UserPlus, Trash2, Users as UsersIcon, Copy, Home } from "lucide-react";
 import { AvatarUpload } from "@/components/AvatarUpload";
+import { MagicLinkQR } from "@/components/MagicLinkQR";
+import { EMPLOYEE_ROLES } from "@/lib/access";
 import { Unauthorized } from "@/components/Unauthorized";
 import { isAuthzError } from "@/lib/authzError";
 import { CohostKpisInline } from "@/components/CohostKpisInline";
@@ -75,6 +77,10 @@ export default function Team() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const [myRoles, setMyRoles] = useState<Role[]>([]);
+  // The admin's effective org — used as the avatar storage folder. Managed
+  // members share this org, so `<orgId>/<memberId>` satisfies the avatars
+  // bucket RLS (is_org_member of the caller's own org).
+  const [orgId, setOrgId] = useState<string | null>(null);
   const [properties, setProperties] = useState<Property[]>([]);
   const [profiles, setProfiles] = useState<Record<string, Profile>>({});
   const [orgRoles, setOrgRoles] = useState<{ user_id: string; role: Role }[]>([]);
@@ -140,6 +146,7 @@ export default function Team() {
     const myOrgId =
       (profile?.org_id as string | null) ??
       ((profile as { pending_org_id?: string | null })?.pending_org_id ?? null);
+    setOrgId(myOrgId);
 
     let scopedProperties: Property[] = [];
     if (isSuper) {
@@ -541,6 +548,7 @@ export default function Team() {
                       <div className="flex items-center gap-3">
                         <AvatarUpload
                           userId={uid}
+                          organizationId={orgId}
                           currentUrl={profile?.avatar_url}
                           fallbackEmoji={ROLE_EMOJI[currentRole] ?? "👤"}
                           size="md"
@@ -573,6 +581,15 @@ export default function Team() {
                             </SelectContent>
                           </Select>
                         )}
+                        {EMPLOYEE_ROLES.includes(currentRole as (typeof EMPLOYEE_ROLES)[number]) && (
+                          <MagicLinkQR
+                            userId={uid}
+                            userName={profile?.full_name || "—"}
+                            avatarUrl={profile?.avatar_url}
+                            roleEmoji={ROLE_EMOJI[currentRole]}
+                            roleLabel={t(`team.roles.${currentRole}`)}
+                          />
+                        )}
                       </div>
                     </div>
                     {assignments.length > 0 && (
@@ -595,6 +612,7 @@ export default function Team() {
 
           <AdminGroupedView
             mode={isSuperAdmin ? "super_admin" : "admin"}
+            orgId={orgId}
             properties={properties}
             profiles={profiles}
             orgRoles={orgRoles}
@@ -621,6 +639,7 @@ export default function Team() {
                     <div className="flex items-center gap-3">
                       <AvatarUpload
                         userId={uid}
+                        organizationId={orgId}
                         currentUrl={profile?.avatar_url}
                         fallbackEmoji={ROLE_EMOJI[primaryRole] ?? "👤"}
                         size="md"
@@ -631,12 +650,23 @@ export default function Team() {
                         <div className="text-xs text-muted-foreground">{profile?.phone}</div>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-1">
-                      {roles.map((role) => (
-                        <Badge key={role} variant={role === "cohost" ? "secondary" : "outline"}>
-                          {t(`team.roles.${role}`)}
-                        </Badge>
-                      ))}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap gap-1">
+                        {roles.map((role) => (
+                          <Badge key={role} variant={role === "cohost" ? "secondary" : "outline"}>
+                            {t(`team.roles.${role}`)}
+                          </Badge>
+                        ))}
+                      </div>
+                      {EMPLOYEE_ROLES.includes(primaryRole as (typeof EMPLOYEE_ROLES)[number]) && (
+                        <MagicLinkQR
+                          userId={uid}
+                          userName={profile?.full_name || "—"}
+                          avatarUrl={profile?.avatar_url}
+                          roleEmoji={ROLE_EMOJI[primaryRole]}
+                          roleLabel={t(`team.roles.${primaryRole}`)}
+                        />
+                      )}
                     </div>
                   </div>
                   {assignments.length > 0 && (
@@ -669,6 +699,7 @@ export default function Team() {
 
 interface GroupedProps {
   mode: "super_admin" | "admin";
+  orgId: string | null;
   properties: Property[];
   profiles: Record<string, Profile>;
   orgRoles: { user_id: string; role: Role }[];
@@ -680,6 +711,7 @@ interface GroupedProps {
 
 function AdminGroupedView({
   mode,
+  orgId,
   properties,
   profiles,
   orgRoles,
@@ -792,6 +824,7 @@ function AdminGroupedView({
               <AdminHierarchyCard
                 key={adminGroup.userId}
                 group={adminGroup}
+                orgId={orgId}
                 properties={properties}
                 propertyMap={propertyMap}
                 profiles={profiles}
@@ -808,6 +841,7 @@ function AdminGroupedView({
             <CohostHierarchyCard
               key={cohostGroup.userId}
               cohost={cohostGroup}
+              orgId={orgId}
               propertyMap={propertyMap}
               profiles={profiles}
               t={t}
@@ -823,6 +857,7 @@ function AdminGroupedView({
 
 interface AdminHierarchyCardProps {
   group: AdminHierarchy;
+  orgId: string | null;
   properties: Property[];
   propertyMap: Map<string, Property>;
   profiles: Record<string, Profile>;
@@ -833,6 +868,7 @@ interface AdminHierarchyCardProps {
 
 function AdminHierarchyCard({
   group,
+  orgId,
   properties,
   propertyMap,
   profiles,
@@ -850,6 +886,7 @@ function AdminHierarchyCard({
         <div className="flex items-center gap-3">
           <AvatarUpload
             userId={group.userId}
+            organizationId={orgId}
             currentUrl={profile?.avatar_url}
             fallbackEmoji={ROLE_EMOJI.admin}
             size="md"
@@ -898,6 +935,7 @@ function AdminHierarchyCard({
                 <CohostHierarchyCard
                   key={`${group.userId}_${cohost.userId}`}
                   cohost={cohost}
+                  orgId={orgId}
                   propertyMap={propertyMap}
                   profiles={profiles}
                   t={t}
@@ -915,6 +953,7 @@ function AdminHierarchyCard({
 
 interface CohostHierarchyCardProps {
   cohost: GroupedCohost;
+  orgId: string | null;
   propertyMap: Map<string, Property>;
   profiles: Record<string, Profile>;
   onAvatarUploaded: (uid: string, url: string) => void;
@@ -924,6 +963,7 @@ interface CohostHierarchyCardProps {
 
 function CohostHierarchyCard({
   cohost,
+  orgId,
   propertyMap,
   profiles,
   onAvatarUploaded,
@@ -938,6 +978,7 @@ function CohostHierarchyCard({
         <div className="flex items-center gap-3">
           <AvatarUpload
             userId={cohost.userId}
+            organizationId={orgId}
             currentUrl={profile?.avatar_url}
             fallbackEmoji={ROLE_EMOJI.cohost}
             size="md"

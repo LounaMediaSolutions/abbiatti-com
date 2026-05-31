@@ -167,11 +167,23 @@ export default function SuperAdminOrg() {
         .eq("id", id)
         .maybeSingle();
       if (orgErr) {
-        toast({
-          title: t("common.error"),
-          description: orgErr.message,
-          variant: "destructive",
-        });
+        // The fetch runs in parallel with the role check, so non-super-admins
+        // who route through here briefly see RLS denials before Unauthorized
+        // renders. Suppress the toast ONLY for confirmed non-super-admins;
+        // when the role check is still resolving (`isSuper === null`) we
+        // surface the error so a real super-admin on cold load still sees
+        // legitimate failures. The closure here captures `isSuper` at the
+        // moment loadOrg ran, so reading "not false" instead of "true" is
+        // the safer side of the trade-off.
+        if (isSuper === false) {
+          console.warn("[SuperAdminOrg] loadOrg silenced for non-super-admin:", orgErr.message);
+        } else {
+          toast({
+            title: t("common.error"),
+            description: orgErr.message,
+            variant: "destructive",
+          });
+        }
         return;
       }
       setOrg(orgData as Org | null);
@@ -209,10 +221,15 @@ export default function SuperAdminOrg() {
     }
   };
 
+  // Kick off org data fetch in parallel with the role check, instead of after.
+  // RLS still gates the response for non-super-admins (empty / denied), and the
+  // page render is gated on `isSuper` separately, so nothing leaks. Wall-clock
+  // win: one round-trip instead of two before the page shows data.
   useEffect(() => {
-    if (isSuper) loadOrg();
+    if (loading || !user || !id) return;
+    loadOrg();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuper, id]);
+  }, [user?.id, loading, id]);
 
   const openInviteFor = (kind: TeamKind) => {
     setInviteKind(kind);

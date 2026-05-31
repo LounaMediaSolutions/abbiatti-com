@@ -23,7 +23,7 @@ import { PHOTO_ACCEPT, validatePhotoFile } from "@/lib/photoUpload";
 import { cn } from "@/lib/utils";
 import { TASK_TYPES, TASK_TYPE_ICONS, TASK_TYPE_COLORS, type TaskType } from "@/lib/taskIcons";
 import { CleaningChecklist } from "@/components/CleaningChecklist";
-import { getUserAccess } from "@/lib/access";
+import { getUserAccess, ASSIGNABLE_ROLES } from "@/lib/access";
 
 type TaskStatus = "todo" | "in_progress" | "done" | "issue";
 type PhotoKind = "before" | "during" | "after" | "issue";
@@ -141,7 +141,12 @@ const Tasks = ({ propertyId, embedded = false }: { propertyId?: string; embedded
   const [properties, setProperties] = useState<Property[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [orgId, setOrgId] = useState<string | null>(null);
-  const [myRoles, setMyRoles] = useState<string[]>([]);
+  // Manager status comes straight from getUserAccess (isAdmin || isCohost), not
+  // from the raw profile role string. A cohost identified only by property
+  // assignments has a non-"cohost" role, so deriving this from that string would
+  // lock them out of creating/assigning tasks even though loadAll loaded their
+  // cohost-scoped data.
+  const [canManage, setCanManage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"mine" | "all">("mine");
   const [statusFilter, setStatusFilter] = useState<"all" | TaskStatus>("all");
@@ -157,7 +162,7 @@ const Tasks = ({ propertyId, embedded = false }: { propertyId?: string; embedded
     priority: 2, due_at: "", guest_name: "",
   });
 
-  const isManager = myRoles.some(r => ["admin", "super_admin", "co_admin", "cohost"].includes(r));
+  const isManager = canManage;
 
   const loadAll = useCallback(async () => {
     if (!user) return;
@@ -169,7 +174,6 @@ const Tasks = ({ propertyId, embedded = false }: { propertyId?: string; embedded
       .maybeSingle();
 
     const access = await getUserAccess(user.id);
-    const baseRoles = access.role ? [access.role] : [];
     const isScopedCohost = access.isCohost && !access.isAdmin;
 
     // For admins/super-admins who haven't been attached to an org yet (notably
@@ -199,8 +203,17 @@ const Tasks = ({ propertyId, embedded = false }: { propertyId?: string; embedded
       // chrome (e.g. the "New task" button) renders — clicking the button
       // will then call createTask which has its own org fallback.
       if (access.isSuperAdmin || access.isAdmin) {
-        setMyRoles(baseRoles);
+        setCanManage(access.isManager);
+      } else {
+        setCanManage(false);
       }
+      // Clear any data that was loaded before the user lost org context —
+      // otherwise stale tasks / properties / members linger and the user can
+      // click into rows that RLS will now deny.
+      setTasks([]);
+      setProperties([]);
+      setMembers([]);
+      setOrgId(null);
       setLoading(false);
       return;
     }
@@ -234,7 +247,7 @@ const Tasks = ({ propertyId, embedded = false }: { propertyId?: string; embedded
       const { data: staffProps } = propIds.length
         ? await supabase.from("properties").select("id,name").in("id", propIds).order("name")
         : { data: [] as Property[] };
-      setMyRoles(baseRoles);
+      setCanManage(access.isManager);
       setMembers([]);
       setProperties((staffProps ?? []) as Property[]);
       setTasks(myTasks);
@@ -263,10 +276,10 @@ const Tasks = ({ propertyId, embedded = false }: { propertyId?: string; embedded
           .from("profiles")
           .select("id,full_name")
           .eq("org_id", effectiveOrgId)
-          .in("role", ["cleaner", "driver", "decorator", "maintenance", "staff"]),
+          .in("role", ASSIGNABLE_ROLES as unknown as string[]),
       ]);
 
-      setMyRoles(baseRoles);
+      setCanManage(access.isManager);
       setProperties((propsRes.data ?? []) as Property[]);
       setMembers((profsRes.data ?? []) as Member[]);
       setTasks((allTasks ?? []).map(normalizeTaskRow).filter((task) => task.property_id && allowedIds.includes(task.property_id)));
@@ -276,10 +289,21 @@ const Tasks = ({ propertyId, embedded = false }: { propertyId?: string; embedded
 
     const [propsRes, profsRes] = await Promise.all([
       supabase.from("properties").select("id,name").eq("org_id", effectiveOrgId).order("name"),
-      supabase.from("profiles").select("id,full_name").eq("org_id", effectiveOrgId),
+      // Restrict the assignee pool to real workspace roles (employees,
+      // cohosts, admins) — see ASSIGNABLE_ROLES in @/lib/access. Excludes
+      // "user" (pending signup) and "guest" (booking party) since they can
+      // never action a task. Keeping cohosts/admins in the set is important
+      // for two reasons: admins legitimately delegate tasks to cohosts, and
+      // historical tasks already assigned to a cohost/admin must still
+      // resolve a name in `members.find(...)` so the card shows "👤 Name".
+      supabase
+        .from("profiles")
+        .select("id,full_name")
+        .eq("org_id", effectiveOrgId)
+        .in("role", ASSIGNABLE_ROLES as unknown as string[]),
     ]);
 
-    setMyRoles(baseRoles);
+    setCanManage(access.isManager);
     setTasks((allTasks ?? []).map(normalizeTaskRow));
     setProperties((propsRes.data ?? []) as Property[]);
     setMembers((profsRes.data ?? []) as Member[]);
@@ -370,6 +394,12 @@ const Tasks = ({ propertyId, embedded = false }: { propertyId?: string; embedded
     if (error) return toast.error((error as { message?: string }).message ?? String(error));
     toast.success(t("tasks.created"));
     setOpenNew(false);
+    // The default "mine" filter only shows tasks assigned to the current user.
+    // A manager who just assigned a task to someone else (or left it
+    // unassigned) would see it vanish, so reveal it by switching to "all".
+    if (filter === "mine" && form.assigned_to !== user.id) {
+      setFilter("all");
+    }
     setForm({ title: "", type: "cleaning", property_id: "", assigned_to: "", priority: 2, due_at: "", guest_name: "" });
     loadAll();
   };

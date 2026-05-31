@@ -40,7 +40,10 @@
     "rentals": "Location matériel",
     "availability": "Disponibilités",
     "settings": "Paramètres",
-    "help": "Aide"
+    "help": "Aide",
+    "guestBooks": "Livrets",
+    "tickets": "Signalements",
+    "menu": "Menu"
   },
   "inventory": {
     "title": "Inventaire",
@@ -103,7 +106,16 @@
     "message": "Message",
     "openWhatsApp": "Ouvrir WhatsApp",
     "langDetected": "Langue",
-    "other": "Autre"
+    "other": "Autre",
+    "guidebook": "Livret",
+    "arrivalReminder": "Rappel J-1",
+    "guestAccount": "Compte invité",
+    "guestPreview": "Aperçu invité",
+    "guestLink": "Lien invité",
+    "guestLinkCopied": "Lien invité copié",
+    "eyebrow": "Réservations",
+    "countLabel": "réservations",
+    "icalFeedsHint": "Synchronisez les calendriers Airbnb, Booking, etc."
   },
   "dashboard": {
     "title": "Tableau de bord",
@@ -114,7 +126,11 @@
       "tasks": "Tâches en cours"
     },
     "quickActions": "Actions rapides",
-    "addProperty": "Ajouter une propriété"
+    "addProperty": "Ajouter une propriété",
+    "eyebrow": "Espace de travail",
+    "assignedProperties": "Propriétés assignées",
+    "assignedPropertiesHint": "Propriétés actuellement visibles dans votre tableau de bord.",
+    "viewAllProperties": "Ouvrir les propriétés"
   },
   "properties": {
     "title": "Propriétés",
@@ -210,6 +226,17 @@
       },
       "noEventsYet": "Aucun historique de validation",
       "noEventsYetTooltip": "Les événements apparaîtront ici dès que la propriété sera soumise pour validation, puis approuvée ou rejetée par un admin ou co-admin, ou re-soumise."
+    },
+    "noOrgForUser": "Vous n’êtes rattaché à aucune organisation. Acceptez votre invitation pour pouvoir créer une propriété.",
+    "bulkDeleted": "{{n}} supprimée(s)",
+    "bulk": {
+      "selected": "sélectionnée(s)",
+      "clear": "Effacer",
+      "selectAll": "Tout sélectionner",
+      "deleteN": "Supprimer {{n}}",
+      "deleting": "Suppression…",
+      "confirmTitle": "Supprimer {{n}} propriété(s) ?",
+      "confirmBody": "Cette action est irréversible. Toutes les données associées (réservations, tâches, livrets, etc.) seront perdues."
     }
   },
   "availability": {
@@ -355,6 +382,12 @@
     "qrGenerate": "Générer un QR de connexion",
     "qrGenerating": "Génération...",
     "qrExpire": "Ce lien expire dans 1 heure. Imprimez-le maintenant.",
+    "qrReusableHint": "Toute personne disposant de cette image peut se connecter en tant que cet employé. Gardez-la privée et désactivez-la en cas de fuite.",
+    "qrDownload": "Télécharger",
+    "qrRegenerate": "Régénérer",
+    "qrRevoke": "Désactiver",
+    "qrRevoked": "QR code désactivé",
+    "qrScanLabel": "Scannez pour vous connecter",
     "roles": {
       "super_admin": "Super admin",
       "admin": "Admin",
@@ -372,6 +405,10 @@
     "title": "Paramètres",
     "subtitle": "Gère ton compte, ton organisation et tes modèles de messages",
     "saved": "Enregistré",
+    "pendingMember": {
+      "title": "Invitation en attente",
+      "body": "Votre invitation à l’organisation n’a pas encore été acceptée : les paramètres de l’organisation peuvent être en lecture seule et les enregistrements peuvent échouer. Acceptez votre invitation pour les gérer pleinement."
+    },
     "tabs": {
       "profile": "Profil",
       "org": "Organisation",
@@ -814,7 +851,8 @@
     "cancel": "Annuler",
     "back": "Retour",
     "language": "Langue",
-    "done": "Terminé"
+    "done": "Terminé",
+    "processing": "Traitement…"
   },
   "adminRoles": {
     "cohostsTitle": "Co-hôtes",
@@ -829,5 +867,15 @@
   "propertyTeam": {
     "adminsOrgWide": "Les administrateurs ont accès à toutes les propriétés de l’organisation ; ils sont donc gérés au niveau de l’organisation, et non par propriété.",
     "noEmployeeCandidates": "Aucun employé disponible à affecter. Créez des employés dans « Employés » dans la barre latérale et assurez-vous qu’ils appartiennent à l’organisation de cette propriété."
+  },
+  "propertyDetail": {
+    "open": "Ouvrir"
+  },
+  "qrLogin": {
+    "working": "Connexion en cours…",
+    "success": "Bienvenue !",
+    "errorTitle": "Ce code n’a pas fonctionné",
+    "errorBody": "Demandez à votre manager de vous envoyer un nouveau QR code.",
+    "usePassword": "Se connecter avec un mot de passe"
   }
 }

@@ -17,6 +17,16 @@ export type AppRole =
 export const ADMIN_ROLES = ["super_admin", "admin", "co_admin"] as const;
 export const EMPLOYEE_ROLES = ["cleaner", "driver", "decorator", "maintenance", "staff"] as const;
 export const ORG_ADMIN_ROLES = ["admin", "co_admin"] as const;
+// Every real workspace role — used as the assignable-member set for tasks and
+// any other assignee dropdown. Excludes "user" (pending signup, not yet
+// promoted) and "guest" (booking party, never an actor). Keeping cohosts and
+// admins in the set ensures historical assignments still resolve a name in
+// `members.find(...)` lookups, and lets admins delegate tasks to cohosts.
+export const ASSIGNABLE_ROLES = [
+  ...EMPLOYEE_ROLES,
+  ...ADMIN_ROLES,
+  "cohost",
+] as const;
 
 export const isAdminRole = (role: string | null | undefined) =>
   !!role && ADMIN_ROLES.includes(role as (typeof ADMIN_ROLES)[number]);
@@ -58,37 +68,56 @@ export async function isGlobalAdmin(userId: string) {
 }
 
 export async function isSuperAdminUser(userId: string) {
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", userId)
-    .maybeSingle();
+  // `profiles.role` is the canonical source. The legacy `user_roles` table is
+  // queried in parallel as a defensive fallback for deployments that migrated
+  // super-admins there and never backfilled `profiles.role` — without it,
+  // those operators lose access on first login. If the table does not exist
+  // the query returns an error we swallow; the cost is one parallel RTT, not
+  // a guaranteed second sequential one.
+  const [profileRes, roleRes] = await Promise.all([
+    supabase.from("profiles").select("role").eq("id", userId).maybeSingle(),
+    supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .eq("role", "super_admin")
+      .maybeSingle(),
+  ]);
 
-  if (isSuperAdminRole(profile?.role)) return true;
-
-  const { data: superAdminRole } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId)
-    .eq("role", "super_admin")
-    .maybeSingle();
-
-  return !!superAdminRole;
+  if (isSuperAdminRole(profileRes.data?.role)) return true;
+  return !!roleRes.data;
 }
 
 export async function getPropertyPermissions(userId: string, propertyId: string) {
-  if (await isGlobalAdmin(userId)) {
-    return ["manage_properties", "manage_reservations", "manage_tasks", "manage_staff", "view_financials", "manage_settings"];
+  // Admin check and cohost-permission lookup are independent — run them in
+  // parallel and let the admin shortcut win when present. One round-trip
+  // worst-case instead of two.
+  const [profileRes, cohostRes] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", userId)
+      .maybeSingle(),
+    supabase
+      .from("property_cohosts")
+      .select("permissions")
+      .eq("user_id", userId)
+      .eq("property_id", propertyId)
+      .maybeSingle(),
+  ]);
+
+  if (isAdminRole(profileRes.data?.role)) {
+    return [
+      "manage_properties",
+      "manage_reservations",
+      "manage_tasks",
+      "manage_staff",
+      "view_financials",
+      "manage_settings",
+    ];
   }
 
-  const { data: cohost } = await supabase
-    .from("property_cohosts")
-    .select("permissions")
-    .eq("user_id", userId)
-    .eq("property_id", propertyId)
-    .maybeSingle();
-
-  return cohost?.permissions || [];
+  return cohostRes.data?.permissions || [];
 }
 
 export async function hasPropertyPermission(userId: string, propertyId: string, permission: string) {
@@ -97,22 +126,28 @@ export async function hasPropertyPermission(userId: string, propertyId: string, 
 }
 
 export async function getUserAccess(userId: string) {
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, org_id")
-    .eq("id", userId)
-    .maybeSingle();
+  // Profile lookup and cohost-assignment probe are independent — run them in
+  // parallel so the worst-case latency is one round-trip, not two.
+  const [profileRes, cohostsRes] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("role, org_id")
+      .eq("id", userId)
+      .maybeSingle(),
+    supabase
+      .from("property_cohosts")
+      .select("property_id")
+      .eq("user_id", userId)
+      .limit(1),
+  ]);
+
+  const profile = profileRes.data;
+  const cohosts = cohostsRes.data;
 
   const role = (profile?.role ?? null) as AppRole | null;
   const isSuperAdmin = isSuperAdminRole(role);
   const isAdmin = isAdminRole(role);
   const isPendingUser = isPendingUserRole(role);
-
-  const { data: cohosts } = await supabase
-    .from("property_cohosts")
-    .select("property_id")
-    .eq("user_id", userId)
-    .limit(1);
 
   const hasCohostAssignments = !!(cohosts && cohosts.length > 0);
   const isCohost = !isAdmin && (role === "cohost" || hasCohostAssignments);

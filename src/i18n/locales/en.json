@@ -40,7 +40,10 @@
     "rentals": "Rental items",
     "availability": "Availability",
     "settings": "Settings",
-    "help": "Help"
+    "help": "Help",
+    "guestBooks": "Guest books",
+    "tickets": "Reports",
+    "menu": "Menu"
   },
   "inventory": {
     "title": "Inventory",
@@ -103,7 +106,16 @@
     "message": "Message",
     "openWhatsApp": "Open WhatsApp",
     "langDetected": "Language",
-    "other": "Other"
+    "other": "Other",
+    "guidebook": "Guidebook",
+    "arrivalReminder": "Reminder",
+    "guestAccount": "Guest account",
+    "guestPreview": "Guest preview",
+    "guestLink": "Guest link",
+    "guestLinkCopied": "Guest link copied",
+    "eyebrow": "Bookings",
+    "countLabel": "reservations",
+    "icalFeedsHint": "Sync calendars from Airbnb, Booking & more."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -114,7 +126,11 @@
       "tasks": "Active tasks"
     },
     "quickActions": "Quick actions",
-    "addProperty": "Add property"
+    "addProperty": "Add property",
+    "eyebrow": "Workspace",
+    "assignedProperties": "Assigned properties",
+    "assignedPropertiesHint": "Properties currently visible in your dashboard.",
+    "viewAllProperties": "Open properties"
   },
   "properties": {
     "title": "Properties",
@@ -210,6 +226,17 @@
       },
       "noEventsYet": "No approval history yet",
       "noEventsYetTooltip": "Events will appear here once the property is submitted for review and an admin or co-admin approves, rejects, or you resubmit it."
+    },
+    "noOrgForUser": "You are not attached to any organization. Accept your invitation to create a property.",
+    "bulkDeleted": "{{n}} deleted",
+    "bulk": {
+      "selected": "selected",
+      "clear": "Clear",
+      "selectAll": "Select all",
+      "deleteN": "Delete {{n}}",
+      "deleting": "Deleting…",
+      "confirmTitle": "Delete {{n}} propertie(s)?",
+      "confirmBody": "This action is irreversible. All associated data (reservations, tasks, guidebooks, etc.) will be lost."
     }
   },
   "availability": {
@@ -355,6 +382,12 @@
     "qrGenerate": "Generate sign-in QR",
     "qrGenerating": "Generating...",
     "qrExpire": "This link expires in 1 hour. Print it now.",
+    "qrReusableHint": "Anyone who has this image can sign in as this employee. Keep it private and disable it if it leaks.",
+    "qrDownload": "Download",
+    "qrRegenerate": "Regenerate",
+    "qrRevoke": "Disable",
+    "qrRevoked": "QR code disabled",
+    "qrScanLabel": "Scan to sign in",
     "roles": {
       "super_admin": "Super admin",
       "admin": "Admin",
@@ -372,6 +405,10 @@
     "title": "Settings",
     "subtitle": "Manage your account, organization and message templates",
     "saved": "Saved",
+    "pendingMember": {
+      "title": "Invitation pending",
+      "body": "Your organization invitation hasn't been accepted yet, so organization settings may be read-only and saves can fail. Accept your invitation to manage them fully."
+    },
     "tabs": {
       "profile": "Profile",
       "org": "Organization",
@@ -814,7 +851,8 @@
     "cancel": "Cancel",
     "back": "Back",
     "language": "Language",
-    "done": "Done"
+    "done": "Done",
+    "processing": "Processing…"
   },
   "adminRoles": {
     "cohostsTitle": "Cohosts",
@@ -829,5 +867,15 @@
   "propertyTeam": {
     "adminsOrgWide": "Admins have access to every property in the organization, so they’re managed at the organization level — not per property.",
     "noEmployeeCandidates": "No employees available to assign. Create employees under \"Employees\" in the sidebar and make sure they belong to this property’s organization."
+  },
+  "propertyDetail": {
+    "open": "Open"
+  },
+  "qrLogin": {
+    "working": "Signing you in…",
+    "success": "Welcome!",
+    "errorTitle": "This code didn’t work",
+    "errorBody": "Ask your manager to send you a new QR code.",
+    "usePassword": "Sign in with a password"
   }
 }

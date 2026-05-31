@@ -25,6 +25,7 @@ import Rentals from "./pages/Rentals";
 import Auth from "./pages/Auth";
 import Welcome from "./pages/Welcome";
 import StaffLogin from "./pages/StaffLogin";
+import QrLogin from "./pages/QrLogin";
 import ResetPassword from "./pages/ResetPassword";
 import GuestBook from "./pages/GuestBook";
 import GuestReservation from "./pages/GuestReservation";
@@ -45,6 +46,7 @@ import SuperAdminStaff from "./pages/SuperAdminStaff";
 import SuperAdminAccessRequests from "./pages/SuperAdminAccessRequests";
 import AdminCohosts from "./pages/AdminCohosts";
 import AdminEmployees from "./pages/AdminEmployees";
+import CohostEmployees from "./pages/CohostEmployees";
 import UserDashboard from "./pages/UserDashboard";
 import MyInvoices from "./pages/MyInvoices";
 import GuestPortal from "./pages/GuestPortal";
@@ -71,6 +73,7 @@ const App = () => (
             <Route path="/welcome" element={<Welcome />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/staff-login" element={<StaffLogin />} />
+            <Route path="/qr-login" element={<QrLogin />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/g/:slug" element={<GuestBook />} />
             <Route path="/s/:slug" element={<GuestReservation />} />
@@ -197,6 +200,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppLayout><Home /></AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/cohost/employees"
+              element={
+                <ProtectedRoute allow={["cohost", "admin", "super_admin"]}>
+                  <AppLayout><CohostEmployees /></AppLayout>
                 </ProtectedRoute>
               }
             />

@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import { ArrowRight, Home, ListTodo, MapPin, Plus, Users } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { AlertCircle, ArrowRight, Home, ListTodo, MapPin, Plus, Users } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { WhatsAppReminders } from "@/components/WhatsAppReminders";
@@ -18,23 +19,42 @@ type DashboardProperty = {
   submitted_by: string | null;
 };
 
+type DashboardData = {
+  stats: { properties: number; team: number; tasks: number };
+  name: string;
+  orgId: string | null;
+  properties: DashboardProperty[];
+};
+
+const EMPTY_DASHBOARD: DashboardData = {
+  stats: { properties: 0, team: 0, tasks: 0 },
+  name: "",
+  orgId: null,
+  properties: [],
+};
+
 const Dashboard = () => {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const [stats, setStats] = useState({ properties: 0, team: 0, tasks: 0 });
-  const [name, setName] = useState("");
-  const [orgId, setOrgId] = useState<string | null>(null);
-  const [properties, setProperties] = useState<DashboardProperty[]>([]);
 
-  useEffect(() => {
-    const load = async () => {
-      if (!user) {
-        setStats({ properties: 0, team: 0, tasks: 0 });
-        setName("");
-        setOrgId(null);
-        setProperties([]);
-        return;
-      }
+  const {
+    data = EMPTY_DASHBOARD,
+    isPending: loading,
+    error,
+  } = useQuery<DashboardData>({
+    queryKey: ["dashboard", user?.id ?? null],
+    enabled: !!user,
+    // 5s of "fresh" — long enough that rapid tab-switching (back / forward)
+    // feels instant, short enough that a stat tile or property card never
+    // lies for more than a few seconds after the user edits something on a
+    // neighbouring page. Mutations on Properties also invalidate this query
+    // explicitly (see Properties.tsx), so the common create/delete cases
+    // refresh immediately rather than waiting on staleness.
+    staleTime: 5_000,
+    refetchOnWindowFocus: true,
+    queryFn: async () => {
+      if (!user) return EMPTY_DASHBOARD;
+
       const [access, profileRes] = await Promise.all([
         getUserAccess(user.id),
         supabase
@@ -44,22 +64,6 @@ const Dashboard = () => {
           .maybeSingle(),
       ]);
       const profile = profileRes.data;
-
-      // ─── TEMP DEBUG ─── remove once the admin-properties bug is resolved.
-      // Logs the live state we use to decide what shows on the dashboard.
-      console.log("[DASHBOARD DEBUG] user.id:", user.id);
-      console.log("[DASHBOARD DEBUG] user.email:", user.email);
-      console.log("[DASHBOARD DEBUG] profile row:", profile);
-      console.log("[DASHBOARD DEBUG] access:", access);
-
-      // What does the user actually have visibility into right now? This query
-      // hits the same RLS as the org-scoped one below — if it returns rows but
-      // the org-scoped one returns 0, we know the org_id values don't match.
-      const allVisible = await supabase
-        .from("properties")
-        .select("id, name, org_id, submitted_by");
-      console.log("[DASHBOARD DEBUG] properties visible via RLS (no filter):", allVisible.data);
-      console.log("[DASHBOARD DEBUG] properties visible via RLS - error:", allVisible.error);
 
       let propsCount = 0;
       let teamCount = 0;
@@ -75,17 +79,13 @@ const Dashboard = () => {
       if (access.isAdmin) {
         const effectiveOrgId =
           profile?.org_id ?? profile?.pending_org_id ?? null;
-        console.log("[DASHBOARD DEBUG] effectiveOrgId used for admin query:", effectiveOrgId);
         if (effectiveOrgId) {
           const orgResult = await supabase
             .from("properties")
             .select("id, name, city, country, submitted_by, org_id")
             .eq("org_id", effectiveOrgId)
             .order("name");
-          console.log("[DASHBOARD DEBUG] org-scoped properties result:", orgResult);
           visibleProperties = (orgResult.data ?? []) as DashboardProperty[];
-        } else {
-          console.log("[DASHBOARD DEBUG] effectiveOrgId is null → admin sees nothing.");
         }
       } else if (access.isCohost) {
         const [membersRes, cohostsRes, createdRes] = await Promise.all([
@@ -150,13 +150,21 @@ const Dashboard = () => {
         teamCount = uniqueUsers.size;
       }
 
-      setName(profile?.full_name ?? "");
-      setOrgId(profile?.org_id ?? profile?.pending_org_id ?? null);
-      setProperties(visibleProperties);
-      setStats({ properties: propsCount, team: teamCount, tasks: tasksCount });
-    };
-    load();
-  }, [user]);
+      return {
+        stats: { properties: propsCount, team: teamCount, tasks: tasksCount },
+        name: profile?.full_name ?? "",
+        orgId: profile?.org_id ?? profile?.pending_org_id ?? null,
+        properties: visibleProperties,
+      };
+    },
+  });
+
+  const { stats, name, orgId, properties } = data;
+  const loadError = error
+    ? error instanceof Error
+      ? error.message
+      : String(error)
+    : null;
 
   const cards = [
     { icon: Home, label: t("dashboard.stats.properties"), value: stats.properties, color: "bg-primary/10 text-primary" },
@@ -165,65 +173,66 @@ const Dashboard = () => {
   ];
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto">
-      {/* Page header — title + primary CTA. Consolidates the old bottom Quick
-          Actions card into a single, more discoverable spot. */}
+    <div className="space-y-8 max-w-6xl mx-auto">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1.5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            {t("dashboard.eyebrow", { defaultValue: "Workspace" })}
-          </p>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-secondary">
+          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-secondary text-balance">
             {t("dashboard.title")}
           </h1>
           <p className="text-sm text-muted-foreground">
             {t("dashboard.welcome", { name: name || user?.email })}
           </p>
         </div>
-        <Button asChild className="shrink-0 cursor-pointer">
-          <Link to="/properties">
-            <Plus className="h-4 w-4 mr-2" />
+        <Button asChild className="shrink-0">
+          <Link to="/properties?new=1">
+            <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
             {t("dashboard.addProperty")}
           </Link>
         </Button>
       </div>
 
-      {/* KPI strip — bordered cards with subtle hover lift */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {cards.map((c) => (
-          <Card
-            key={c.label}
-            className={cn(
-              "p-5 border border-border/60 shadow-sm",
-              "transition-all duration-200",
-              "hover:border-primary/30 hover:shadow-md",
-            )}
-          >
-            <div
-              className={cn(
-                "inline-flex h-10 w-10 items-center justify-center rounded-lg",
-                c.color,
-              )}
-            >
-              <c.icon className="h-5 w-5" />
-            </div>
-            <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              {c.label}
-            </p>
-            <p className="mt-1 text-3xl font-bold tracking-tight text-secondary tabular-nums">
-              {c.value}
-            </p>
-          </Card>
-        ))}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" aria-busy={loading}>
+        {loading
+          ? cards.map((c) => (
+              <Card key={c.label} className="p-5 border border-border/60 shadow-card">
+                <Skeleton className="h-11 w-11 rounded-xl" />
+                <Skeleton className="mt-5 h-4 w-24" />
+                <Skeleton className="mt-2 h-9 w-16" />
+              </Card>
+            ))
+          : cards.map((c) => (
+              <Card
+                key={c.label}
+                className={cn(
+                  "p-5 border border-border/60 shadow-card",
+                  "transition-colors duration-200 motion-reduce:transition-none",
+                  "hover:border-gold/40",
+                )}
+              >
+                <div
+                  className={cn(
+                    "inline-flex h-11 w-11 items-center justify-center rounded-xl ring-1 ring-inset ring-border/40",
+                    c.color,
+                  )}
+                >
+                  <c.icon className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <p className="mt-5 text-sm font-medium text-muted-foreground">
+                  {c.label}
+                </p>
+                <p className="mt-1 text-3xl font-semibold tracking-tight text-secondary tabular-nums">
+                  {c.value}
+                </p>
+              </Card>
+            ))}
       </div>
 
       <WhatsAppReminders orgId={orgId} />
 
-      {/* Assigned properties — list-as-cards */}
-      <Card className="p-5 border border-border/60 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+      <Card className="p-5 border border-border/60 shadow-card sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-5">
           <div>
-            <h2 className="font-semibold text-secondary">
+            <h2 className="text-lg font-semibold tracking-tight text-secondary text-balance">
               {t("dashboard.assignedProperties", { defaultValue: "Assigned properties" })}
             </h2>
             <p className="text-sm text-muted-foreground">
@@ -232,14 +241,48 @@ const Dashboard = () => {
               })}
             </p>
           </div>
-          <Button asChild variant="outline" size="sm" className="shrink-0 cursor-pointer">
+          <Button asChild variant="outline" size="sm" className="shrink-0">
             <Link to="/properties">
               {t("dashboard.viewAllProperties", { defaultValue: "Open properties" })}
             </Link>
           </Button>
         </div>
 
-        {properties.length === 0 ? (
+        {loadError ? (
+          <div
+            role="alert"
+            className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm"
+          >
+            <AlertCircle className="h-5 w-5 shrink-0 text-destructive" aria-hidden="true" />
+            <div>
+              <p className="font-medium text-secondary">
+                {t("dashboard.loadErrorTitle", { defaultValue: "Couldn't load your properties" })}
+              </p>
+              <p className="mt-0.5 text-muted-foreground">
+                {t("dashboard.loadErrorBody", {
+                  defaultValue: "Check your connection and try again.",
+                })}
+              </p>
+            </div>
+          </div>
+        ) : loading ? (
+          <div className="space-y-2" aria-busy="true">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div
+                key={i}
+                className="flex items-center justify-between gap-3 rounded-xl border border-border/60 p-4"
+              >
+                <div className="flex min-w-0 items-center gap-3 flex-1">
+                  <Skeleton className="h-10 w-10 rounded-xl shrink-0" />
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <Skeleton className="h-4 w-1/3" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : properties.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border bg-muted/30 p-8 text-center">
             <Home className="mx-auto h-8 w-8 text-muted-foreground/60" aria-hidden="true" />
             <p className="mt-3 text-sm font-medium text-secondary">
@@ -261,13 +304,13 @@ const Dashboard = () => {
                 to={`/properties/${property.id}`}
                 className={cn(
                   "group flex items-center justify-between gap-3 rounded-xl border border-border/60 p-4",
-                  "transition-colors duration-200 cursor-pointer",
-                  "hover:border-primary/30 hover:bg-muted/40",
+                  "transition-colors duration-200 motion-reduce:transition-none",
+                  "hover:border-gold/40 hover:bg-muted/40",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2",
                 )}
               >
                 <div className="flex min-w-0 items-center gap-3">
-                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-border/40">
                     <Home className="h-5 w-5" aria-hidden="true" />
                   </span>
                   <div className="min-w-0">
@@ -280,7 +323,7 @@ const Dashboard = () => {
                   </div>
                 </div>
                 <ArrowRight
-                  className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5"
+                  className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none group-hover:translate-x-0.5"
                   aria-hidden="true"
                 />
               </Link>

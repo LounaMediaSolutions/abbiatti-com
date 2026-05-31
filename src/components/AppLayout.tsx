@@ -145,9 +145,10 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
     // each property's detail page (tabs), so they are no longer top-level
     // nav items.
     { to: "/properties", icon: Home, label: t("nav.properties") },
+    { to: "/cohost/employees", icon: Briefcase, label: t("nav.employees") },
     { to: "/rentals", icon: Sparkles, label: t("nav.rentals") },
-    { to: "/guest-books", icon: BookOpen, label: "Livrets" },
-    { to: "/tickets", icon: AlertTriangle, label: "Signalements" },
+    { to: "/guest-books", icon: BookOpen, label: t("nav.guestBooks", { defaultValue: "Guest books" }) },
+    { to: "/tickets", icon: AlertTriangle, label: t("nav.tickets", { defaultValue: "Reports" }) },
   ];
 
   // Employees get a Properties + Tasks split: "Tasks" is the agenda of every
@@ -161,7 +162,7 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
       end: true,
     },
     { to: "/properties", icon: Home, label: t("nav.properties") },
-    { to: "/tickets", icon: AlertTriangle, label: "Signalements" },
+    { to: "/tickets", icon: AlertTriangle, label: t("nav.tickets", { defaultValue: "Reports" }) },
     { to: "/help", icon: HelpCircle, label: t("nav.help") },
     { to: "/settings", icon: Settings, label: t("nav.settings") },
   ];
@@ -197,8 +198,8 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
     // handles its own scroll, so we let the page flow naturally there.
     <div className="h-screen flex flex-col md:flex-row md:overflow-hidden bg-background">
       {/* Sidebar (desktop) */}
-      <aside className="hidden md:flex w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground p-4 h-full">
-        <div className="flex items-center justify-center px-2 py-4 mb-2 shrink-0">
+      <aside className="hidden md:flex w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground px-3 py-4 h-full">
+        <div className="flex items-center justify-center px-2 py-3 shrink-0">
           {orgLogo ? (
             <img
               src={orgLogo}
@@ -209,7 +210,12 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
             <EscaparLogo size="text-2xl" className="text-sidebar-foreground" />
           )}
         </div>
-        <nav className="flex-1 space-y-1 overflow-y-auto min-h-0">
+        {/* Gold hairline — a quiet luxury cue separating brand from nav. */}
+        <div
+          className="mx-2 mb-3 mt-1 h-px bg-gradient-to-r from-transparent via-gold/40 to-transparent"
+          aria-hidden="true"
+        />
+        <nav className="flex-1 space-y-1 overflow-y-auto min-h-0 px-0.5 pt-1">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
@@ -217,35 +223,65 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
               end={item.end}
               className={({ isActive }) =>
                 cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
+                  "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/50",
                   isActive
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
-                    : "hover:bg-sidebar-accent",
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground",
                 )
               }
             >
-              <item.icon className="h-5 w-5" />
-              {item.label}
+              {({ isActive }) => (
+                <>
+                  {/* Gold active rail */}
+                  <span
+                    className={cn(
+                      "absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-gradient-gold transition-opacity duration-200",
+                      isActive ? "opacity-100" : "opacity-0",
+                    )}
+                    aria-hidden="true"
+                  />
+                  <item.icon
+                    className={cn(
+                      "h-[18px] w-[18px] shrink-0 transition-colors duration-200",
+                      isActive
+                        ? "text-gold"
+                        : "text-sidebar-foreground/55 group-hover:text-sidebar-foreground/90",
+                    )}
+                  />
+                  <span className="truncate">{item.label}</span>
+                </>
+              )}
             </NavLink>
           ))}
         </nav>
-        <div className="space-y-2 pt-4 border-t border-sidebar-border shrink-0">
-          {orgName && (
+        <div className="space-y-2.5 pt-4 mt-2 border-t border-sidebar-border/70 shrink-0 px-0.5">
+          {orgName ? (
             <div
-              className="px-3 text-[11px] text-sidebar-foreground/80 truncate flex items-center gap-1.5"
+              className="flex items-center gap-2.5 rounded-xl bg-sidebar-accent/40 px-2.5 py-2 ring-1 ring-inset ring-sidebar-border/70"
               title={`${t("app.organization", { defaultValue: "Organisation" })} : ${orgName}`}
               data-testid="sidebar-org-name"
             >
-              <Building2 className="h-3 w-3 shrink-0" />
-              <span className="truncate">{orgName}</span>
+              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sidebar/60 text-gold ring-1 ring-inset ring-sidebar-border/70">
+                <Building2 className="h-4 w-4" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-xs font-medium text-sidebar-foreground">
+                  {orgName}
+                </p>
+                <p className="truncate text-[11px] text-sidebar-foreground/55">
+                  {user?.email}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="px-3 text-xs text-sidebar-foreground/60 truncate">
+              {user?.email}
             </div>
           )}
-          <div className="px-3 text-xs text-sidebar-foreground/60 truncate">
-            {user?.email}
-          </div>
           <Button
             variant="ghost"
-            className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-primary-foreground"
+            className="w-full justify-start rounded-xl text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             onClick={handleLogout}
           >
             <LogOut className="h-4 w-4 mr-2" />
@@ -326,13 +362,32 @@ export const AppLayout = ({ children }: { children: ReactNode }) => {
                 end={item.end}
                 className={({ isActive }) =>
                   cn(
-                    "flex flex-col items-center justify-center gap-1 py-2 px-4 text-[10px] min-w-[72px]",
-                    isActive ? "text-primary" : "text-sidebar-foreground/70",
+                    "relative flex flex-col items-center justify-center gap-1 py-2.5 px-4 text-[10px] min-w-[72px] transition-colors duration-200",
+                    isActive
+                      ? "text-sidebar-accent-foreground"
+                      : "text-sidebar-foreground/60 hover:text-sidebar-foreground/90",
                   )
                 }
               >
-                <item.icon className="h-5 w-5" />
-                <span className="whitespace-nowrap">{item.label}</span>
+                {({ isActive }) => (
+                  <>
+                    {/* Gold active indicator at the top edge */}
+                    <span
+                      className={cn(
+                        "absolute top-0 left-1/2 h-0.5 w-8 -translate-x-1/2 rounded-full bg-gradient-gold transition-opacity duration-200",
+                        isActive ? "opacity-100" : "opacity-0",
+                      )}
+                      aria-hidden="true"
+                    />
+                    <item.icon
+                      className={cn(
+                        "h-5 w-5 transition-colors duration-200",
+                        isActive ? "text-gold" : "",
+                      )}
+                    />
+                    <span className="whitespace-nowrap">{item.label}</span>
+                  </>
+                )}
               </NavLink>
             ))}
           </div>

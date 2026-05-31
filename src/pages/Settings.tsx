@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { AvatarUpload } from "@/components/AvatarUpload";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,11 +47,14 @@ import {
   Shield,
   Handshake,
   Images,
+  Info,
 } from "lucide-react";
 import { PartnersTab } from "@/components/PartnersTab";
 import { AlbumsTab } from "@/components/AlbumsTab";
 import i18n from "@/i18n";
 import { PHOTO_ACCEPT, validatePhotoFile } from "@/lib/photoUpload";
+import { isSuperAdminRole } from "@/lib/access";
+import { cn } from "@/lib/utils";
 
 type Profile = {
   id: string;
@@ -58,8 +62,17 @@ type Profile = {
   phone: string | null;
   avatar_url: string | null;
   language: string;
+  role: string | null;
   org_id: string | null;
+  pending_org_id: string | null;
 };
+
+// Single source of truth for "which org should we scope queries to": prefer
+// the confirmed `org_id`, fall back to `pending_org_id` for invited-but-not-
+// yet-promoted users. Defined once so the load() side and the render side
+// cannot drift apart if the fallback chain ever changes.
+const resolveEffectiveOrgId = (p: Pick<Profile, "org_id" | "pending_org_id"> | null) =>
+  p?.org_id ?? p?.pending_org_id ?? null;
 
 type Org = {
   id: string;
@@ -100,21 +113,22 @@ export default function Settings() {
     setLoading(true);
     const { data: p } = await supabase
       .from("profiles")
-      .select("id, full_name, phone, avatar_url, language, org_id")
+      .select("id, full_name, phone, avatar_url, language, role, org_id, pending_org_id")
       .eq("id", user.id)
       .maybeSingle();
     setProfile(p as Profile | null);
-    if (p?.org_id) {
+    const effectiveOrgId = resolveEffectiveOrgId(p as Profile | null);
+    if (effectiveOrgId) {
       const [{ data: o }, { data: tpl }] = await Promise.all([
         supabase
           .from("organizations")
           .select("id, name, logo_url, brand_color")
-          .eq("id", p.org_id)
+          .eq("id", effectiveOrgId)
           .maybeSingle(),
         supabase
           .from("message_templates")
           .select("*")
-          .eq("organization_id", p.org_id)
+          .eq("organization_id", effectiveOrgId)
           .order("sort_order"),
       ]);
       setOrg(o as Org | null);
@@ -129,6 +143,25 @@ export default function Settings() {
     );
   }
 
+  // Org-scoped tabs key off the effective org — real org first, then the
+  // pending org while membership is being set up (see load()).
+  const effectiveOrgId = resolveEffectiveOrgId(profile);
+
+  // Super-admins are platform-level and have no single "my organization" —
+  // they manage every org's settings, templates, partners and albums per-org
+  // from the Super Admin area (/super-admin/org/:id). So in personal Settings
+  // we hide the org-scoped tabs for them and show only Profile + Security.
+  const isSuper = isSuperAdminRole(profile.role);
+  const showOrgTabs = !isSuper;
+
+  // Pending-membership case: user has only `pending_org_id`, not a real
+  // `org_id`. The org-scoped queries above still run with the pending id to
+  // match other org-scoped surfaces, but RLS write policies typically gate on
+  // confirmed membership — so Save buttons on OrgTab / Templates / Partners /
+  // Albums can fail silently. Surface a banner so the user understands why
+  // edits may not stick and what to do about it.
+  const isPendingMember = !profile.org_id && !!profile.pending_org_id;
+
   return (
     <div className="container max-w-4xl mx-auto p-4 md:p-6 space-y-4">
       <div>
@@ -138,32 +171,51 @@ export default function Settings() {
         </p>
       </div>
 
+      {isPendingMember && showOrgTabs && (
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertTitle>{t("settings.pendingMember.title")}</AlertTitle>
+          <AlertDescription>
+            {t("settings.pendingMember.body")}
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Tabs defaultValue="profile" className="w-full">
-        <TabsList className="grid grid-cols-2 md:grid-cols-6 w-full h-auto">
+        <TabsList
+          className={cn(
+            "grid grid-cols-2 w-full h-auto",
+            showOrgTabs ? "md:grid-cols-6" : "md:grid-cols-2",
+          )}
+        >
           <TabsTrigger value="profile" className="flex items-center gap-2">
             <UserIcon className="h-4 w-4" />{" "}
             <span className="hidden sm:inline">
               {t("settings.tabs.profile")}
             </span>
           </TabsTrigger>
-          <TabsTrigger value="org" className="flex items-center gap-2">
-            <Building2 className="h-4 w-4" />{" "}
-            <span className="hidden sm:inline">{t("settings.tabs.org")}</span>
-          </TabsTrigger>
-          <TabsTrigger value="templates" className="flex items-center gap-2">
-            <MessageSquare className="h-4 w-4" />{" "}
-            <span className="hidden sm:inline">
-              {t("settings.tabs.templates")}
-            </span>
-          </TabsTrigger>
-          <TabsTrigger value="partners" className="flex items-center gap-2">
-            <Handshake className="h-4 w-4" />{" "}
-            <span className="hidden sm:inline">{t("settings.tabs.partners")}</span>
-          </TabsTrigger>
-          <TabsTrigger value="albums" className="flex items-center gap-2">
-            <Images className="h-4 w-4" />{" "}
-            <span className="hidden sm:inline">{t("settings.tabs.albums")}</span>
-          </TabsTrigger>
+          {showOrgTabs && (
+            <>
+              <TabsTrigger value="org" className="flex items-center gap-2">
+                <Building2 className="h-4 w-4" />{" "}
+                <span className="hidden sm:inline">{t("settings.tabs.org")}</span>
+              </TabsTrigger>
+              <TabsTrigger value="templates" className="flex items-center gap-2">
+                <MessageSquare className="h-4 w-4" />{" "}
+                <span className="hidden sm:inline">
+                  {t("settings.tabs.templates")}
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="partners" className="flex items-center gap-2">
+                <Handshake className="h-4 w-4" />{" "}
+                <span className="hidden sm:inline">{t("settings.tabs.partners")}</span>
+              </TabsTrigger>
+              <TabsTrigger value="albums" className="flex items-center gap-2">
+                <Images className="h-4 w-4" />{" "}
+                <span className="hidden sm:inline">{t("settings.tabs.albums")}</span>
+              </TabsTrigger>
+            </>
+          )}
           <TabsTrigger value="security" className="flex items-center gap-2">
             <Shield className="h-4 w-4" />{" "}
             <span className="hidden sm:inline">
@@ -180,37 +232,41 @@ export default function Settings() {
           />
         </TabsContent>
 
-        <TabsContent value="org">
-          {org && profile.org_id ? (
-            <OrgTab org={org} onSaved={load} />
-          ) : (
-            <Card>
-              <CardContent className="p-6 text-muted-foreground">—</CardContent>
-            </Card>
-          )}
-        </TabsContent>
+        {showOrgTabs && (
+          <>
+            <TabsContent value="org">
+              {org && effectiveOrgId ? (
+                <OrgTab org={org} onSaved={load} />
+              ) : (
+                <Card>
+                  <CardContent className="p-6 text-muted-foreground">—</CardContent>
+                </Card>
+              )}
+            </TabsContent>
 
-        <TabsContent value="templates">
-          {profile.org_id && (
-            <TemplatesTab
-              orgId={profile.org_id}
-              templates={templates}
-              onChanged={load}
-            />
-          )}
-        </TabsContent>
+            <TabsContent value="templates">
+              {effectiveOrgId && (
+                <TemplatesTab
+                  orgId={effectiveOrgId}
+                  templates={templates}
+                  onChanged={load}
+                />
+              )}
+            </TabsContent>
 
-        <TabsContent value="partners">
-          {profile.org_id && (
-            <PartnersTab orgId={profile.org_id} />
-          )}
-        </TabsContent>
+            <TabsContent value="partners">
+              {effectiveOrgId && (
+                <PartnersTab orgId={effectiveOrgId} />
+              )}
+            </TabsContent>
 
-        <TabsContent value="albums">
-          {profile.org_id && (
-            <AlbumsTab orgId={profile.org_id} />
-          )}
-        </TabsContent>
+            <TabsContent value="albums">
+              {effectiveOrgId && (
+                <AlbumsTab orgId={effectiveOrgId} />
+              )}
+            </TabsContent>
+          </>
+        )}
 
         <TabsContent value="security">
           <SecurityTab email={user?.email ?? ""} onSignOut={signOut} />
@@ -257,6 +313,10 @@ function ProfileTab({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center gap-4">
+          {/* Gate on the confirmed org (org_id), not the pending one: the
+              avatars-bucket RLS requires is_org_member, which a pending-invite
+              user does not yet satisfy — showing the control would only produce
+              a 403. Confirmed members upload to <org_id>/<userId>. */}
           {profile.org_id && (
             <AvatarUpload
               userId={profile.id}

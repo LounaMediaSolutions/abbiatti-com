@@ -33,7 +33,8 @@ import {
 } from "@/components/ui/sheet";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { isSuperAdminUser } from "@/lib/access";
+import { isSuperAdminUser, isEmployeeRole } from "@/lib/access";
+import { MagicLinkQR } from "@/components/MagicLinkQR";
 import { Unauthorized } from "@/components/Unauthorized";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -362,16 +363,18 @@ export default function SuperAdminProfileManager({
     isSuperAdminUser(user.id).then(setIsSuper).catch(() => setIsSuper(false));
   }, [user?.id, loading]);
 
-  // Load every organization once the user is confirmed super-admin, so the
-  // per-profile org picker can move a user to any organization.
+  // Load every organization in parallel with the role check, so the
+  // per-profile org picker is populated by the time the profile rows render.
+  // RLS still gates the response: non-super-admins get back zero rows, so
+  // running this eagerly leaks nothing.
   useEffect(() => {
-    if (!isSuper) return;
+    if (loading || !user) return;
     supabase
       .from("organizations")
       .select("id, name")
       .order("name")
       .then(({ data }) => setAllOrgs((data ?? []) as { id: string; name: string }[]));
-  }, [isSuper]);
+  }, [user?.id, loading]);
 
   const loadProfiles = async () => {
     setFetching(true);
@@ -383,7 +386,11 @@ export default function SuperAdminProfileManager({
         .from("profiles")
         .select(
           "id, full_name, email, phone, avatar_url, org_id, role, active, country, state",
-          { count: "exact" },
+          // `estimated` returns an exact count for small tables and falls back
+          // to the planner's estimate for large ones. `exact` was forcing a
+          // full count scan on every page load and dominated the wall time on
+          // the Admins / Cohosts / Employees / Profiles screens.
+          { count: "estimated" },
         )
         .order("created_at", { ascending: false, nullsFirst: false })
         .order("id", { ascending: true });
@@ -491,8 +498,14 @@ export default function SuperAdminProfileManager({
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const safePage = Math.min(page, totalPages);
   useEffect(() => {
+    // Clamp only when the count is settled and the gap is real. With
+    // `count: "estimated"` the planner can return a value lower than the
+    // actual row total mid-fetch, which would otherwise bounce the user back
+    // to an earlier page and re-fire the query, flickering the table. Waiting
+    // for `!fetching` lets the count stabilize before we adjust the page.
+    if (fetching) return;
     if (safePage !== page) setPage(safePage);
-  }, [safePage, page]);
+  }, [safePage, page, fetching]);
 
   const updateOrg = async (profile: ProfileItem, nextOrgId: string) => {
     if (!nextOrgId || nextOrgId === profile.org_id) return;
@@ -1466,6 +1479,37 @@ export default function SuperAdminProfileManager({
                     </div>
                   </div>
                 </div>
+
+                {/* QR sign-in — only for employee roles. Super-admins can
+                    always issue (the Edge function short-circuits on
+                    super_admin), so showing the control here is safe. */}
+                {isEmployeeRole(editing.effectiveRole) && (
+                  <div className="mt-5 space-y-2">
+                    <Label className="text-xs font-medium text-muted-foreground">
+                      {t("team.qrCode", { defaultValue: "QR sign-in" })}
+                    </Label>
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/30 p-3">
+                      <p className="text-xs text-muted-foreground">
+                        {t("team.qrInlineHint", {
+                          defaultValue:
+                            "Generate a scannable QR so this employee can sign in without typing.",
+                        })}
+                      </p>
+                      <MagicLinkQR
+                        userId={editing.id}
+                        userName={editing.full_name || editing.email || "—"}
+                        avatarUrl={editing.avatar_url}
+                        roleLabel={
+                          editing.effectiveRole
+                            ? t(`team.roles.${editing.effectiveRole}`, {
+                                defaultValue: editing.effectiveRole,
+                              })
+                            : undefined
+                        }
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {/* Danger zone */}
                 <div className="mt-6 space-y-2 border-t border-border/60 pt-5">

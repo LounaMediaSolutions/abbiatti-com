@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Plus, Home, Pencil, Trash2, MapPin, Building2, Castle, Hotel, Bed, HelpCircle, Link2, Calendar, Sparkles, History, UserCog, ShieldCheck, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -247,7 +248,15 @@ const buildAddress = (p: Partial<Property>) => {
 const Properties = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<Property[]>([]);
+  // Centralized invalidator for queries downstream of the property set —
+  // currently just the Dashboard (stats + assigned-properties list) — so each
+  // mutation site stays declarative instead of repeating the queryKey.
+  const invalidateDownstream = () => {
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+  };
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Property | null>(null);
@@ -349,7 +358,10 @@ const Properties = () => {
     const missing = new Set<string>(discoveredMissingPropertyFields);
     let fields = ALL_FIELDS.filter((f) => !missing.has(f));
 
-    for (let attempt = 0; attempt < 24; attempt += 1) {
+    // 6 attempts covers every plausible column-mismatch case (one drop per
+    // attempt). 24 was a paranoid upper bound that, when the DB really was
+    // misaligned, would burn 24 sequential round-trips before giving up.
+    for (let attempt = 0; attempt < 6; attempt += 1) {
       const result = await supabase
         .from("properties")
         .select(fields.join(", "))
@@ -471,29 +483,6 @@ const Properties = () => {
     ]);
     const props = propsResult;
 
-    // ─── TEMP DEBUG ─── remove once admin-properties bug is resolved.
-    // We need to confirm three things to diagnose this:
-    //   1. What role + org_id does the live profile row carry?
-    //   2. What does RLS return to this user when we don't filter at all?
-    //   3. Which branch does the visibility filter take?
-    const { data: rawProfile } = await supabase
-      .from("profiles")
-      .select("id, full_name, email, role, org_id, pending_org_id, invitation_status, active")
-      .eq("id", user.id)
-      .maybeSingle();
-    console.log("[PROPERTIES DEBUG] user.id:", user.id);
-    console.log("[PROPERTIES DEBUG] user.email:", user.email);
-    console.log("[PROPERTIES DEBUG] raw profiles row:", rawProfile);
-    console.log("[PROPERTIES DEBUG] getUserAccess() returned:", access);
-    console.log(
-      "[PROPERTIES DEBUG] props count (after RLS, before client filter):",
-      props.length,
-    );
-    console.log(
-      "[PROPERTIES DEBUG] props org_ids (after RLS):",
-      props.map((p) => ({ id: p.id, name: p.name, org_id: p.org_id, submitted_by: p.submitted_by })),
-    );
-
     const canManageOrgProperties = access.isSuperAdmin || isOrgAdminRole(access.role);
     setCanApprove(canManageOrgProperties);
     setCanManageAll(canManageOrgProperties);
@@ -507,10 +496,8 @@ const Properties = () => {
     // - Cohosts / employees only see properties they're explicitly assigned to
     //   via property_members or property_cohosts, plus any they created.
     let visibleProps: Property[];
-    let debugBranch: string;
     if (access.isSuperAdmin || (isOrgAdminRole(access.role) && access.orgId)) {
       visibleProps = props;
-      debugBranch = access.isSuperAdmin ? "super-admin (all)" : "org-admin with orgId (all)";
     } else {
       const [membersRes, cohostsRes] = await Promise.all([
         supabase.from("property_members").select("property_id").eq("user_id", user.id),
@@ -526,13 +513,7 @@ const Properties = () => {
       visibleProps = props.filter(
         (p) => allowedIds.has(p.id) || p.submitted_by === user.id,
       );
-      debugBranch = "assignment-based (cohost/employee)";
-      console.log("[PROPERTIES DEBUG] property_members rows:", membersRes.data);
-      console.log("[PROPERTIES DEBUG] property_cohosts rows:", cohostsRes.data);
-      console.log("[PROPERTIES DEBUG] allowedIds size:", allowedIds.size);
     }
-    console.log("[PROPERTIES DEBUG] filter branch:", debugBranch);
-    console.log("[PROPERTIES DEBUG] visibleProps count (final):", visibleProps.length);
 
     // Render the cards NOW, before chasing secondary metadata. Cohost picker
     // and approval-history badges will populate in the background pass below.
@@ -800,6 +781,15 @@ const Properties = () => {
     setOpen(true);
   };
 
+  useEffect(() => {
+    if (searchParams.get("new") === "1") {
+      openNew();
+      const next = new URLSearchParams(searchParams);
+      next.delete("new");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
   const openEdit = (p: Property) => {
     setEditing(p);
     setForm({
@@ -936,7 +926,7 @@ const Properties = () => {
         return toast.error(
           t("properties.noOrgForUser", {
             defaultValue:
-              "Vous n’êtes rattaché à aucune organisation. Acceptez votre invitation pour pouvoir créer une propriété.",
+              "You are not attached to any organization. Accept your invitation to create a property.",
           }),
         );
       }
@@ -991,6 +981,7 @@ const Properties = () => {
     }
     setOpen(false);
     load();
+    invalidateDownstream();
   };
 
   const confirmDelete = async () => {
@@ -1015,6 +1006,7 @@ const Properties = () => {
       return;
     }
     toast.success(t("properties.deleted"));
+    invalidateDownstream();
   };
 
   const confirmBulkDelete = async () => {
@@ -1032,7 +1024,8 @@ const Properties = () => {
       load(); // resync
       return;
     }
-    toast.success(t("properties.bulkDeleted", { count: ids.length, defaultValue: `${ids.length} supprimées` }));
+    toast.success(t("properties.bulkDeleted", { n: ids.length, defaultValue: `${ids.length} deleted` }));
+    invalidateDownstream();
   };
 
   const toggleSelect = (id: string) => {
@@ -1138,7 +1131,7 @@ const Properties = () => {
         >
           <div className="flex items-center gap-3 min-w-0">
             <span className="font-semibold" data-testid="property-bulk-count">
-              {selectedIds.size} {t("properties.bulk.selected", { defaultValue: "sélectionnée(s)" })}
+              {selectedIds.size} {t("properties.bulk.selected", { defaultValue: "selected" })}
             </span>
             <Button
               variant="ghost"
@@ -1146,7 +1139,7 @@ const Properties = () => {
               className="text-primary-foreground hover:bg-primary-foreground/10 h-8"
               onClick={clearSelection}
             >
-              {t("properties.bulk.clear", { defaultValue: "Effacer" })}
+              {t("properties.bulk.clear", { defaultValue: "Clear" })}
             </Button>
             {selectedIds.size < items.length && (
               <Button
@@ -1155,7 +1148,7 @@ const Properties = () => {
                 className="text-primary-foreground hover:bg-primary-foreground/10 h-8"
                 onClick={selectAllVisible}
               >
-                {t("properties.bulk.selectAll", { defaultValue: "Tout sélectionner" })}
+                {t("properties.bulk.selectAll", { defaultValue: "Select all" })}
               </Button>
             )}
           </div>
@@ -1168,8 +1161,8 @@ const Properties = () => {
           >
             <Trash2 className="h-4 w-4 mr-1.5" />
             {t("properties.bulk.deleteN", {
-              count: selectedIds.size,
-              defaultValue: `Supprimer ${selectedIds.size}`,
+              n: selectedIds.size,
+              defaultValue: `Delete ${selectedIds.size}`,
             })}
           </Button>
         </Card>
@@ -1423,7 +1416,7 @@ const Properties = () => {
                   <h3
                     className="font-semibold text-secondary truncate cursor-pointer hover:underline"
                     onClick={() => navigate(`/properties/${p.id}`)}
-                    title={t("propertyDetail.open", { defaultValue: "Ouvrir" })}
+                    title={t("propertyDetail.open", { defaultValue: "Open" })}
                   >
                     {p.name}
                   </h3>
@@ -1548,7 +1541,7 @@ const Properties = () => {
                   data-testid="property-open-button"
                   onClick={() => navigate(`/properties/${p.id}`)}
                 >
-                  {t("propertyDetail.open", { defaultValue: "Ouvrir" })} <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                  {t("propertyDetail.open", { defaultValue: "Open" })} <ArrowRight className="h-3.5 w-3.5 ml-1" />
                 </Button>
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -1605,14 +1598,14 @@ const Properties = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>
               {t("properties.bulk.confirmTitle", {
-                count: selectedIds.size,
-                defaultValue: `Supprimer ${selectedIds.size} propriété(s) ?`,
+                n: selectedIds.size,
+                defaultValue: `Delete ${selectedIds.size} propertie(s)?`,
               })}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {t("properties.bulk.confirmBody", {
                 defaultValue:
-                  "Cette action est irréversible. Toutes les données associées (réservations, tâches, livrets, etc.) seront perdues.",
+                  "This action is irreversible. All associated data (reservations, tasks, guidebooks, etc.) will be lost.",
               })}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -1624,10 +1617,10 @@ const Properties = () => {
               data-testid="property-bulk-delete-confirm"
             >
               {bulkDeleting
-                ? t("properties.bulk.deleting", { defaultValue: "Suppression…" })
+                ? t("properties.bulk.deleting", { defaultValue: "Deleting…" })
                 : t("properties.bulk.deleteN", {
-                    count: selectedIds.size,
-                    defaultValue: `Supprimer ${selectedIds.size}`,
+                    n: selectedIds.size,
+                    defaultValue: `Delete ${selectedIds.size}`,
                   })}
             </AlertDialogAction>
           </AlertDialogFooter>

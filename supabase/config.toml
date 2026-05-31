@@ -1,13 +1,10 @@
-project_id = "qbfggjwkovfcsgukjrrh"
+project_id = "pqaxxhateycrklzlnhkc"
 
 [functions.create-team-member]
 verify_jwt = true
 
 [functions.sync-ical]
 verify_jwt = false
-
-[functions.generate-magic-link]
-verify_jwt = true
 
 [functions.inngest]
 verify_jwt = false
@@ -16,4 +13,17 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.cleanup-guest-accounts]
+verify_jwt = false
+
+# Issue/revoke reusable employee QR sign-in tokens — caller must be authenticated
+# (admin/cohost); the function does its own role + org checks.
+[functions.staff-qr-issue]
+verify_jwt = true
+
+[functions.staff-qr-revoke]
+verify_jwt = true
+
+# PUBLIC redemption: the employee scanning the QR is not yet authenticated, so
+# JWT verification is OFF. The bearer token in the request body is the credential.
+[functions.staff-qr-login]
 verify_jwt = false

@@ -29,8 +29,9 @@ import {
 } from "@/components/ui/sheet";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { getUserAccess } from "@/lib/access";
+import { getUserAccess, isEmployeeRole } from "@/lib/access";
 import { Unauthorized } from "@/components/Unauthorized";
+import { MagicLinkQR } from "@/components/MagicLinkQR";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1158,6 +1159,36 @@ export default function OrgProfileManager({
                     </div>
                   )}
                 </div>
+
+                {/* QR sign-in — only for employee roles. The Edge function
+                    (`staff-qr-issue`) re-checks authorization on the server,
+                    so showing the control to admins / co-admins of the same
+                    org is safe; super-admins implicitly pass too. */}
+                {isEmployeeRole(editing.role) && (
+                  <div className="mt-5 space-y-2">
+                    <Label className="text-xs font-medium text-muted-foreground">
+                      {t("team.qrCode", { defaultValue: "QR sign-in" })}
+                    </Label>
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/30 p-3">
+                      <p className="text-xs text-muted-foreground">
+                        {t("team.qrInlineHint", {
+                          defaultValue:
+                            "Generate a scannable QR so this employee can sign in without typing.",
+                        })}
+                      </p>
+                      <MagicLinkQR
+                        userId={editing.id}
+                        userName={editing.full_name || editing.email || "—"}
+                        avatarUrl={editing.avatar_url}
+                        roleLabel={
+                          editing.role
+                            ? t(`team.roles.${editing.role}`, { defaultValue: editing.role })
+                            : undefined
+                        }
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {/* Danger zone */}
                 <div className="mt-6 border-t border-border/60 pt-5">

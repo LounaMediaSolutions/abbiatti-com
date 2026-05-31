@@ -12,12 +12,26 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { CalendarDays, MessageCircle, Plus, RefreshCw, Link2, Pencil, BookOpen, Bell, UserPlus, Eye } from "lucide-react";
+import { CalendarDays, MessageCircle, Plus, RefreshCw, Link2, Pencil, BookOpen, Bell, UserPlus, Eye, MapPin, Phone, Users, Moon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { ReservationRentals } from "@/components/ReservationRentals";
 import { CreateGuestAccountDialog } from "@/components/CreateGuestAccountDialog";
-import { format } from "date-fns";
+import { format, differenceInCalendarDays } from "date-fns";
 import { getUserAccess } from "@/lib/access";
+import { cn } from "@/lib/utils";
+
+function getInitials(name?: string | null) {
+  // Guard against whitespace-only names (e.g. " " imported from an iCal feed):
+  // trimming first means a blank name falls through to the "?" placeholder
+  // instead of rendering an empty avatar pill.
+  const trimmed = name?.trim();
+  if (!trimmed) return "?";
+  return trimmed
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+}
 
 type Reservation = {
   id: string;
@@ -291,19 +305,38 @@ export default function Reservations({ propertyId, embedded = false }: { propert
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        {!embedded && (
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2"><CalendarDays className="h-6 w-6" /> {t("reservations.title")}</h1>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        {!embedded ? (
+          <div className="space-y-1.5">
+            <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-gold">
+              <span className="h-px w-6 bg-gradient-gold" aria-hidden="true" />
+              {t("reservations.eyebrow", { defaultValue: "Bookings" })}
+            </p>
+            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-secondary">
+              {t("reservations.title")}
+            </h1>
             <p className="text-sm text-muted-foreground">{t("reservations.subtitle")}</p>
           </div>
+        ) : (
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <CalendarDays className="h-4 w-4 text-gold" aria-hidden="true" />
+            <span>
+              {displayReservations.length}{" "}
+              {t("reservations.countLabel", { defaultValue: "reservations" })}
+            </span>
+          </div>
         )}
-        <div className="flex gap-2 ml-auto">
-          <Button variant="outline" onClick={() => syncIcal.mutate(undefined)} disabled={syncIcal.isPending}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${syncIcal.isPending ? "animate-spin" : ""}`} />
+        <div className="flex gap-2 sm:ml-auto">
+          <Button
+            variant="outline"
+            className="cursor-pointer"
+            onClick={() => syncIcal.mutate(undefined)}
+            disabled={syncIcal.isPending}
+          >
+            <RefreshCw className={cn("h-4 w-4 mr-2", syncIcal.isPending && "animate-spin")} />
             {t("reservations.syncAll")}
           </Button>
-          <Button onClick={() => setAddOpen(true)}>
+          <Button className="cursor-pointer" onClick={() => setAddOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
             {t("reservations.add")}
           </Button>
@@ -311,27 +344,61 @@ export default function Reservations({ propertyId, embedded = false }: { propert
       </div>
 
       {/* iCal feeds per property */}
-      <Card className="p-4">
-        <h2 className="font-semibold mb-3 flex items-center gap-2"><Link2 className="h-4 w-4" /> {t("reservations.icalFeeds")}</h2>
+      <Card className="p-5 border border-border/60 shadow-card sm:p-6">
+        <div className="mb-4 flex items-center gap-2.5">
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-border/40">
+            <Link2 className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div>
+            <h2 className="text-sm font-semibold tracking-tight text-secondary">
+              {t("reservations.icalFeeds")}
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {t("reservations.icalFeedsHint", {
+                defaultValue: "Sync calendars from Airbnb, Booking & more.",
+              })}
+            </p>
+          </div>
+        </div>
         <div className="grid sm:grid-cols-2 gap-3">
           {displayProperties.map((p) => {
             const propFeeds = feeds.filter((f) => f.property_id === p.id);
             return (
-              <div key={p.id} className="border rounded-lg p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-medium">{p.name}</span>
-                  <Button size="sm" variant="outline" onClick={() => setFeedDialog(p.id)}>
+              <div
+                key={p.id}
+                className="rounded-xl border border-border/60 bg-muted/20 p-3.5 transition-colors hover:border-gold/40"
+              >
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="font-medium text-sm text-secondary truncate">{p.name}</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 shrink-0 cursor-pointer"
+                    onClick={() => setFeedDialog(p.id)}
+                  >
                     <Plus className="h-3 w-3 mr-1" /> iCal
                   </Button>
                 </div>
                 {propFeeds.length === 0 ? (
                   <p className="text-xs text-muted-foreground">{t("reservations.noFeeds")}</p>
                 ) : (
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     {propFeeds.map((f) => (
-                      <div key={f.id} className="flex items-center justify-between text-xs">
-                        <span className="truncate">{f.label} · <Badge variant="outline">{f.source}</Badge></span>
-                        <Button size="sm" variant="ghost" onClick={() => syncIcal.mutate(f.id)}>
+                      <div
+                        key={f.id}
+                        className="flex items-center justify-between gap-2 rounded-lg bg-card px-2.5 py-1.5 ring-1 ring-inset ring-border/50"
+                      >
+                        <span className="flex min-w-0 items-center gap-1.5 text-xs">
+                          <span className="truncate text-secondary">{f.label}</span>
+                          <Badge variant="outline" className="shrink-0 font-normal">{f.source}</Badge>
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 shrink-0 cursor-pointer p-0"
+                          onClick={() => syncIcal.mutate(f.id)}
+                          aria-label={t("reservations.syncAll")}
+                        >
                           <RefreshCw className="h-3 w-3" />
                         </Button>
                       </div>
@@ -347,69 +414,190 @@ export default function Reservations({ propertyId, embedded = false }: { propert
       {/* Reservations list */}
       <div className="space-y-3">
         {displayReservations.length === 0 ? (
-          <Card className="p-8 text-center text-muted-foreground">{t("reservations.empty")}</Card>
+          <Card className="border border-dashed border-border/70 bg-muted/20 p-10 text-center shadow-none">
+            <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground/70 ring-1 ring-inset ring-border/50">
+              <CalendarDays className="h-6 w-6" aria-hidden="true" />
+            </span>
+            <p className="mt-4 text-sm font-medium text-secondary">{t("reservations.empty")}</p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4 cursor-pointer"
+              onClick={() => setAddOpen(true)}
+            >
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              {t("reservations.add")}
+            </Button>
+          </Card>
         ) : (
           displayReservations.map((r) => {
             const incomplete = !r.guest_name || !r.guest_phone;
+            const isBlocked = r.status === "blocked";
+            const nights = Math.max(
+              0,
+              differenceInCalendarDays(new Date(r.check_out), new Date(r.check_in)),
+            );
             return (
-              <Card key={r.id} className="p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-semibold">{r.guest_name || t("reservations.unknownGuest")}</h3>
-                      <Badge variant="outline">{r.source}</Badge>
-                      {r.external_code && <Badge variant="secondary">{r.external_code}</Badge>}
-                      {r.status === "blocked" && <Badge>{t("reservations.blocked")}</Badge>}
-                      {incomplete && r.status !== "blocked" && (
-                        <Badge className="bg-orange-500 text-white">{t("reservations.incomplete")}</Badge>
-                      )}
-                      {!incomplete && <Badge className="bg-green-600 text-white">{t("reservations.ready")}</Badge>}
+              <Card
+                key={r.id}
+                className={cn(
+                  "group overflow-hidden border border-border/60 p-0 shadow-card transition-all duration-300",
+                  "hover:-translate-y-0.5 hover:border-gold/40 hover:shadow-soft",
+                )}
+              >
+                {/* status accent rail */}
+                <div className="flex">
+                  <span
+                    className={cn(
+                      "w-1 shrink-0",
+                      isBlocked && "bg-muted-foreground/40",
+                      !isBlocked && incomplete && "bg-amber-400",
+                      !isBlocked && !incomplete && "bg-emerald-500",
+                    )}
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0 flex-1 p-4 sm:p-5">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span
+                        className={cn(
+                          "mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-semibold ring-1 ring-inset ring-border/40",
+                          isBlocked
+                            ? "bg-muted text-muted-foreground"
+                            : "bg-primary/10 text-primary",
+                        )}
+                        aria-hidden="true"
+                      >
+                        {isBlocked ? <CalendarDays className="h-5 w-5" /> : getInitials(r.guest_name)}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-semibold text-secondary truncate">
+                            {r.guest_name || t("reservations.unknownGuest")}
+                          </h3>
+                          <Badge variant="outline" className="font-normal capitalize">{r.source}</Badge>
+                          {r.external_code && (
+                            <Badge variant="secondary" className="font-normal">{r.external_code}</Badge>
+                          )}
+                          {isBlocked && (
+                            <Badge className="border-transparent bg-muted text-muted-foreground hover:bg-muted">
+                              {t("reservations.blocked")}
+                            </Badge>
+                          )}
+                          {!isBlocked && incomplete && (
+                            <Badge className="gap-1 border-transparent bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200 hover:bg-amber-50">
+                              {t("reservations.incomplete")}
+                            </Badge>
+                          )}
+                          {!isBlocked && !incomplete && (
+                            <Badge className="gap-1 border-transparent bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 hover:bg-emerald-50">
+                              {t("reservations.ready")}
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                          <span className="flex items-center gap-1.5">
+                            <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                            {propertyMap[r.property_id] || "—"}
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <CalendarDays className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                            {format(new Date(r.check_in), "dd MMM")} → {format(new Date(r.check_out), "dd MMM yyyy")}
+                          </span>
+                          {!isBlocked && Number.isFinite(nights) && (
+                            <span className="flex items-center gap-1.5">
+                              <Moon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                              {nights}
+                            </span>
+                          )}
+                          {typeof r.guests_count === "number" && r.guests_count > 0 && (
+                            <span className="flex items-center gap-1.5">
+                              <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                              {r.guests_count}
+                            </span>
+                          )}
+                          {r.guest_phone && (
+                            <span className="flex items-center gap-1.5">
+                              <Phone className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                              {r.guest_phone}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {propertyMap[r.property_id] || "—"} · {format(new Date(r.check_in), "dd/MM/yyyy")} → {format(new Date(r.check_out), "dd/MM/yyyy")}
-                    </p>
-                    {r.guest_phone && <p className="text-xs text-muted-foreground mt-0.5">📱 {r.guest_phone}</p>}
-                  </div>
-                  <div className="flex gap-2 flex-wrap">
-                    <Button size="sm" variant="outline" onClick={() => setEditing(r)}>
-                      <Pencil className="h-3 w-3 mr-1" /> {t("reservations.complete")}
-                    </Button>
-                    {r.guest_phone && r.status !== "blocked" && (
-                      <>
-                        <Button size="sm" variant="outline" onClick={() => { setWaOpen(r); setWaPreset("guidebook"); }}>
-                          <BookOpen className="h-3 w-3 mr-1" /> Livret
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => { setWaOpen(r); setWaPreset("arrival_reminder"); }}>
-                          <Bell className="h-3 w-3 mr-1" /> Rappel J-1
-                        </Button>
-                        <Button size="sm" onClick={() => { setWaOpen(r); setWaPreset(null); }} className="bg-green-600 hover:bg-green-700">
-                          <MessageCircle className="h-3 w-3 mr-1" /> WhatsApp
-                        </Button>
-                      </>
-                    )}
-                    {r.status !== "blocked" && (
-                      <Button size="sm" variant="outline" onClick={() => setGuestAcctFor(r)}>
-                        <UserPlus className="h-3 w-3 mr-1" /> Compte invité
-                      </Button>
-                    )}
-                    {r.status !== "blocked" && (
-                      <Button size="sm" variant="outline" onClick={() => navigate(`/guest-preview/${r.id}`)}>
-                        <Eye className="h-3 w-3 mr-1" /> Aperçu Guest
-                      </Button>
-                    )}
-                    {(r as any).guest_slug && (
+
+                    {/* action toolbar */}
+                    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3.5">
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => {
-                          const url = `${window.location.origin}/s/${(r as any).guest_slug}`;
-                          navigator.clipboard.writeText(url);
-                          toast.success("Lien guest copié");
-                        }}
+                        className="cursor-pointer"
+                        onClick={() => setEditing(r)}
                       >
-                        <Link2 className="h-3 w-3 mr-1" /> Lien guest
+                        <Pencil className="h-3.5 w-3.5 mr-1.5" /> {t("reservations.complete")}
                       </Button>
-                    )}
+                      {r.guest_phone && !isBlocked && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="cursor-pointer"
+                            onClick={() => { setWaOpen(r); setWaPreset("guidebook"); }}
+                          >
+                            <BookOpen className="h-3.5 w-3.5 mr-1.5" /> {t("reservations.guidebook", { defaultValue: "Guidebook" })}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="cursor-pointer"
+                            onClick={() => { setWaOpen(r); setWaPreset("arrival_reminder"); }}
+                          >
+                            <Bell className="h-3.5 w-3.5 mr-1.5" /> {t("reservations.arrivalReminder", { defaultValue: "Reminder" })}
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="cursor-pointer bg-emerald-600 text-white hover:bg-emerald-700"
+                            onClick={() => { setWaOpen(r); setWaPreset(null); }}
+                          >
+                            <MessageCircle className="h-3.5 w-3.5 mr-1.5" /> WhatsApp
+                          </Button>
+                        </>
+                      )}
+                      {!isBlocked && (
+                        <>
+                          <span className="mx-0.5 hidden h-5 w-px bg-border/70 sm:block" aria-hidden="true" />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="cursor-pointer text-muted-foreground hover:text-secondary"
+                            onClick={() => setGuestAcctFor(r)}
+                          >
+                            <UserPlus className="h-3.5 w-3.5 mr-1.5" /> {t("reservations.guestAccount", { defaultValue: "Guest account" })}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="cursor-pointer text-muted-foreground hover:text-secondary"
+                            onClick={() => navigate(`/guest-preview/${r.id}`)}
+                          >
+                            <Eye className="h-3.5 w-3.5 mr-1.5" /> {t("reservations.guestPreview", { defaultValue: "Guest preview" })}
+                          </Button>
+                        </>
+                      )}
+                      {(r as any).guest_slug && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="cursor-pointer text-muted-foreground hover:text-secondary"
+                          onClick={() => {
+                            const url = `${window.location.origin}/s/${(r as any).guest_slug}`;
+                            navigator.clipboard.writeText(url);
+                            toast.success(t("reservations.guestLinkCopied", { defaultValue: "Guest link copied" }));
+                          }}
+                        >
+                          <Link2 className="h-3.5 w-3.5 mr-1.5" /> {t("reservations.guestLink", { defaultValue: "Guest link" })}
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </Card>

@@ -19,6 +19,25 @@
     <meta name="twitter:image" content="/abbiatti-logo.png" />
     
     <link rel="icon" type="image/png" href="/abbiatti-logo.png" />
+
+    <!-- Fonts: loaded non-blocking (preload + onload swap) instead of a
+         render-blocking CSS @import. preconnect warms the TLS handshake; if
+         fonts.googleapis.com is unreachable the page still paints with the
+         local fallbacks declared in src/index.css. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap"
+      onload="this.onload=null;this.rel='stylesheet'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap"
+      />
+    </noscript>
   </head>
 
   <body>
