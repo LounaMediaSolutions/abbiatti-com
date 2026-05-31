@@ -221,7 +221,9 @@ const Dashboard = () => {
                   {c.label}
                 </p>
                 <p className="mt-1 text-3xl font-semibold tracking-tight text-secondary tabular-nums">
-                  {c.value}
+                  {/* On a load error the counts are not real zeros — show a
+                      neutral dash so the tiles don't assert "0 properties". */}
+                  {loadError ? "—" : c.value}
                 </p>
               </Card>
             ))}

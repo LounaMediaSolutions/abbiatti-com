@@ -353,15 +353,37 @@ const Properties = () => {
       notes: null,
     };
 
+    // The legacy/un-migrated schema (the worst case we must support) is known
+    // to contain at least these columns — verified against the live table. When
+    // the rich select is rejected we fall back to *this whole set in one shot*
+    // instead of peeling rejected columns one per round-trip.
+    const LEGACY_SAFE_FIELDS = [
+      "id",
+      "org_id",
+      "name",
+      "address",
+      "city",
+      "country",
+      "bedrooms",
+      "bathrooms",
+      "active",
+    ];
+
     // Seed `missing` from the module-level memo so we don't re-discover the
     // same set of absent columns on every page mount.
     const missing = new Set<string>(discoveredMissingPropertyFields);
     let fields = ALL_FIELDS.filter((f) => !missing.has(f));
+    let collapsedToSafe = false;
 
-    // 6 attempts covers every plausible column-mismatch case (one drop per
-    // attempt). 24 was a paranoid upper bound that, when the DB really was
-    // misaligned, would burn 24 sequential round-trips before giving up.
-    for (let attempt = 0; attempt < 6; attempt += 1) {
+    // Strategy: try the full (rich) select first. A fully-migrated deployment
+    // returns everything in ONE round-trip. A legacy deployment rejects the
+    // first unknown column — at which point we DON'T peel one column at a time
+    // (that cost ~19 sequential remote 400s on the legacy schema and spammed
+    // the console). Instead we collapse straight to LEGACY_SAFE_FIELDS, so the
+    // worst case is 2 round-trips. Any residual mismatch within the safe set
+    // (very unusual) is then peeled one-by-one. The discovered set is memoized
+    // at module scope so subsequent mounts skip the probe entirely.
+    for (let attempt = 0; attempt < ALL_FIELDS.length; attempt += 1) {
       const result = await supabase
         .from("properties")
         .select(fields.join(", "))
@@ -393,10 +415,23 @@ const Properties = () => {
       if (!missingColumn || !fields.includes(missingColumn)) {
         throw result.error;
       }
+
+      if (!collapsedToSafe) {
+        // First rejection: collapse to the known-safe core in a single step.
+        // Everything outside the safe set is marked missing so it's filled from
+        // DEFAULTS above. This turns the legacy case into 2 total round-trips.
+        collapsedToSafe = true;
+        ALL_FIELDS.forEach((f) => {
+          if (!LEGACY_SAFE_FIELDS.includes(f)) missing.add(f);
+        });
+        fields = ALL_FIELDS.filter((f) => !missing.has(f));
+        missing.forEach((f) => discoveredMissingPropertyFields.add(f));
+        continue;
+      }
+
+      // Residual mismatch even within the safe set: peel one at a time.
       fields = fields.filter((f) => f !== missingColumn);
       missing.add(missingColumn);
-      // Update the cache as we discover misses, so even a partial probe is
-      // useful if a transient error aborts later iterations.
       discoveredMissingPropertyFields.add(missingColumn);
     }
 
@@ -1052,6 +1087,7 @@ const Properties = () => {
     if (error) return toast.error(error.message);
     toast.success(t("properties.approval.approved_toast"));
     load();
+    invalidateDownstream();
   };
 
   const rejectProperty = async () => {
@@ -1065,6 +1101,7 @@ const Properties = () => {
     setRejectFor(null);
     setRejectReason("");
     load();
+    invalidateDownstream();
   };
 
   const assignCohost = async (p: Property, newUserId: string | null) => {

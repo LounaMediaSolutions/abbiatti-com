@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Plus, Camera, Play, Check, AlertTriangle, Trash2, Star, ImageIcon, X, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -137,6 +138,7 @@ const normalizeTaskRow = (row: any): Task => {
 const Tasks = ({ propertyId, embedded = false }: { propertyId?: string; embedded?: boolean } = {}) => {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -402,6 +404,9 @@ const Tasks = ({ propertyId, embedded = false }: { propertyId?: string; embedded
     }
     setForm({ title: "", type: "cleaning", property_id: "", assigned_to: "", priority: 2, due_at: "", guest_name: "" });
     loadAll();
+    // The dashboard aggregates a task count; refresh it so the new task is
+    // reflected immediately instead of lagging until the cache goes stale.
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   };
 
   const confirmDelete = async () => {
@@ -425,6 +430,7 @@ const Tasks = ({ propertyId, embedded = false }: { propertyId?: string; embedded
       return;
     }
     toast.success(t("tasks.deleted"));
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   };
 
   const confirmBulkDelete = async () => {
@@ -442,6 +448,7 @@ const Tasks = ({ propertyId, embedded = false }: { propertyId?: string; embedded
       return;
     }
     toast.success(t("tasks.bulkDeleted", { count: ids.length, defaultValue: `${ids.length} supprimées` }));
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   };
 
   const toggleSelect = (id: string) => {

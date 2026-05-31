@@ -68,45 +68,47 @@ export async function isGlobalAdmin(userId: string) {
 }
 
 export async function isSuperAdminUser(userId: string) {
-  // `profiles.role` is the canonical source. The legacy `user_roles` table is
-  // queried in parallel as a defensive fallback for deployments that migrated
-  // super-admins there and never backfilled `profiles.role` — without it,
-  // those operators lose access on first login. If the table does not exist
-  // the query returns an error we swallow; the cost is one parallel RTT, not
-  // a guaranteed second sequential one.
-  const [profileRes, roleRes] = await Promise.all([
-    supabase.from("profiles").select("role").eq("id", userId).maybeSingle(),
-    supabase
+  // `profiles.role` is the canonical source. Check it FIRST and short-circuit:
+  // a profile-based super-admin must never depend on the legacy table being
+  // reachable. (Querying both in parallel was a regression — a transient
+  // failure on `user_roles` would reject the whole check and lock out a real
+  // super-admin whose profile already proves their role.)
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (isSuperAdminRole(profile?.role)) return true;
+
+  // Legacy fallback only: some deployments stored super-admins in `user_roles`
+  // and never backfilled `profiles.role`. Any failure here (table missing,
+  // network blip) is treated as "not a super-admin" rather than allowed to
+  // throw — the canonical path above has already returned for real ones.
+  try {
+    const { data } = await supabase
       .from("user_roles")
       .select("role")
       .eq("user_id", userId)
       .eq("role", "super_admin")
-      .maybeSingle(),
-  ]);
-
-  if (isSuperAdminRole(profileRes.data?.role)) return true;
-  return !!roleRes.data;
+      .maybeSingle();
+    return !!data;
+  } catch {
+    return false;
+  }
 }
 
 export async function getPropertyPermissions(userId: string, propertyId: string) {
-  // Admin check and cohost-permission lookup are independent — run them in
-  // parallel and let the admin shortcut win when present. One round-trip
-  // worst-case instead of two.
-  const [profileRes, cohostRes] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", userId)
-      .maybeSingle(),
-    supabase
-      .from("property_cohosts")
-      .select("permissions")
-      .eq("user_id", userId)
-      .eq("property_id", propertyId)
-      .maybeSingle(),
-  ]);
+  // Admins get the full permission set without a second query. Check the role
+  // first and short-circuit — only non-admins need the per-property cohost
+  // lookup, so we never pay for it on the admin path.
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", userId)
+    .maybeSingle();
 
-  if (isAdminRole(profileRes.data?.role)) {
+  if (isAdminRole(profile?.role)) {
     return [
       "manage_properties",
       "manage_reservations",
@@ -117,7 +119,14 @@ export async function getPropertyPermissions(userId: string, propertyId: string)
     ];
   }
 
-  return cohostRes.data?.permissions || [];
+  const { data: cohost } = await supabase
+    .from("property_cohosts")
+    .select("permissions")
+    .eq("user_id", userId)
+    .eq("property_id", propertyId)
+    .maybeSingle();
+
+  return cohost?.permissions || [];
 }
 
 export async function hasPropertyPermission(userId: string, propertyId: string, permission: string) {

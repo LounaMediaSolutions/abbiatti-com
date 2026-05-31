@@ -49,7 +49,11 @@ export function AvatarUpload({ userId, organizationId, currentUrl, fallbackEmoji
     }
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop() || "jpg";
+      // Sanitize the extension: a crafted filename like "a.jp/g" would otherwise
+      // inject a slash into the storage path and create a stray subfolder. Keep
+      // only a short alphanumeric suffix, defaulting to jpg.
+      const rawExt = file.name.split(".").pop() ?? "";
+      const ext = (/^[a-zA-Z0-9]{1,5}$/.test(rawExt) ? rawExt : "jpg").toLowerCase();
       // Path convention enforced by the avatars bucket RLS: <org_id>/<user_id>.
       const path = `${organizationId}/${userId}.${ext}`;
       const { error: upErr } = await supabase.storage

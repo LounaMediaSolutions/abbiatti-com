@@ -386,11 +386,12 @@ export default function SuperAdminProfileManager({
         .from("profiles")
         .select(
           "id, full_name, email, phone, avatar_url, org_id, role, active, country, state",
-          // `estimated` returns an exact count for small tables and falls back
-          // to the planner's estimate for large ones. `exact` was forcing a
-          // full count scan on every page load and dominated the wall time on
-          // the Admins / Cohosts / Employees / Profiles screens.
-          { count: "estimated" },
+          // `exact` keeps the page count and "X of Y" total correct. The
+          // planner's `estimated` count was noticeably wrong for filtered
+          // subsets (by country / role), which produced a wrong page count and
+          // a last page with the wrong number of rows. Accuracy wins here: this
+          // is an admin-only, paginated tool, not a hot path.
+          { count: "exact" },
         )
         .order("created_at", { ascending: false, nullsFirst: false })
         .order("id", { ascending: true });

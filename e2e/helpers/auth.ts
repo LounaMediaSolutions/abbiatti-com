@@ -105,6 +105,21 @@ export async function loginAs(
   await submitLogin(page, expectedPathname ?? /^(?!\/auth$|\/staff-login$).+/);
 }
 
+/**
+ * Convenience wrapper: sign in as the field employee and land on the agenda.
+ * Defaults to the simplified `/staff-login` entry employees use in the field,
+ * but `/auth` also routes them to `/employee` and is accepted via `entryPath`.
+ */
+export async function loginAsStaff(
+  page: Page,
+  { entryPath = "/staff-login" as LoginOptions["entryPath"] } = {},
+) {
+  await loginAs(page, staffCredentials.email, staffCredentials.password, {
+    entryPath,
+    expectedPathname: "/employee",
+  });
+}
+
 export async function expectAuthenticatedShell(
   page: Page,
   email: string,
